@@ -47,6 +47,7 @@ lua_source(lua_sources lua/trigger.lua)
 lua_source(lua_sources lua/table.lua)
 lua_source(lua_sources ../third_party/luafun/fun.lua)
 lua_source(lua_sources lua/httpc.lua)
+lua_source(lua_sources lua/merger.lua)
 lua_source(lua_sources lua/iconv.lua)
 # LuaJIT jit.* library
 lua_source(lua_sources "${CMAKE_BINARY_DIR}/third_party/luajit/src/jit/bc.lua")
@@ -181,6 +182,7 @@ set (server_sources
      lua/fio.c
      lua/crypto.c
      lua/httpc.c
+     lua/merger.c
      lua/utf8.c
      lua/info.c
      ${lua_sources}
