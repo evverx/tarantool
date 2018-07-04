@@ -1,12 +1,16 @@
-check_library_exists (gcov __gcov_flush  ""  HAVE_GCOV)
+check_library_exists(gcov __gcov_flush  ""  HAVE_GCOV)
 
 set(ENABLE_GCOV_DEFAULT OFF)
 option(ENABLE_GCOV "Enable integration with gcov, a code coverage program" ${ENABLE_GCOV_DEFAULT})
 
 if (ENABLE_GCOV)
     if (NOT HAVE_GCOV)
-    message (FATAL_ERROR
-         "ENABLE_GCOV option requested but gcov library is not found")
+        if (CMAKE_COMPILER_IS_CLANG)
+            message(WARNING "GCOV is available on clang from 3.0.0")
+            set(HAVE_GCOV 1)
+        else()
+            message(FATAL_ERROR "ENABLE_GCOV option requested but gcov library is not found")
+        endif()
     endif()
 
     add_compile_flags("C;CXX"
@@ -18,8 +22,6 @@ if (ENABLE_GCOV)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -ftest-coverage")
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fprofile-arcs")
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -ftest-coverage")
-
-   # add_library(gcov SHARED IMPORTED)
 endif()
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
