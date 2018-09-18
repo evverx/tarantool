@@ -124,6 +124,11 @@ static int
 on_exit_f(va_list ap)
 {
 	(void) ap;
+	/*
+	 * run on_shutdown triggers before event loop break,
+	 * so that we are able to yield in them.
+	 */
+	box_run_on_shutdown_triggers();
 	/* Terminate the main event loop. */
 	ev_break(loop(), EVBREAK_ALL);
 	return 0;
@@ -132,6 +137,17 @@ on_exit_f(va_list ap)
 void
 tarantool_exit(void)
 {
+	static volatile sig_atomic_t num_calls = 0;
+	/*
+	 * We are already running on_shutdown triggers,
+	 * and will exit as soon as they'll finish.
+	 * Do not execute them twice.
+	 */
+	if (num_calls > 0)
+		return;
+
+	++num_calls;
+
 	struct fiber *f = fiber_new("on_shutdown", on_exit_f);
 	if (f == NULL) {
 		say_warn("failed to allocate a fiber to run shutdown routines.");

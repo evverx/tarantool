@@ -64,6 +64,11 @@ struct vclock;
  */
 extern const struct vclock *box_vclock;
 
+struct trigger;
+
+/** Invoked on box shutdown. */
+extern struct rlist on_shutdown;
+
 /*
  * Initialize box library
  * @throws C++ exception
@@ -83,6 +88,12 @@ box_free(void);
  */
 void
 box_shutdown_wal(void);
+
+/**
+ * Run on_shutdown triggers.
+ */
+void
+box_run_on_shutdown_triggers(void);
 
 /**
  * Load configuration for box library.

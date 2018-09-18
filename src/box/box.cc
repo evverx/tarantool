@@ -79,6 +79,8 @@ static char status[64] = "unknown";
 /** box.stat rmean */
 struct rmean *rmean_box;
 
+struct rlist on_shutdown = RLIST_HEAD_INITIALIZER(on_shutdown);
+
 static void title(const char *new_status)
 {
 	snprintf(status, sizeof(status), "%s", new_status);
@@ -1669,6 +1671,12 @@ box_set_replicaset_uuid(const struct tt_uuid *replicaset_uuid)
 	if (boxk(IPROTO_REPLACE, BOX_SCHEMA_ID, "[%s%s]", "cluster",
 		 tt_uuid_str(&uu)))
 		diag_raise();
+}
+
+void
+box_run_on_shutdown_triggers(void)
+{
+	trigger_run(&on_shutdown, NULL);
 }
 
 void
