@@ -1,0 +1,185 @@
+test_run:cmd("push filter ':"..listen_port.."' to ':listen_port'")
+---
+- true
+...
+--
+-- gh-3234: SWIM - Scalable Weakly-consistent Infection-style
+-- Process Group Membership Protocol. Here are some basic tests on
+-- cfg checking, binding to an existing address etc.
+--
+-- Info() and stop() on non-working server.
+swim_info_sorted()
+---
+- []
+...
+swim.stop()
+---
+...
+-- Empty and multiple cfg is ok.
+swim.cfg({})
+---
+- true
+...
+swim.cfg({})
+---
+- true
+...
+swim_info_sorted()
+---
+- []
+...
+swim.stop()
+---
+...
+-- Members without a server is ok.
+members = {'192.168.0.1:3333', '192.168.0.2:3333', '192.168.0.3:3333'}
+---
+...
+swim.cfg({members = members})
+---
+- true
+...
+swim_info_sorted()
+---
+- - - 192.168.0.1:3333
+    - status: alive
+  - - 192.168.0.2:3333
+    - status: alive
+  - - 192.168.0.3:3333
+    - status: alive
+...
+swim.stop()
+---
+...
+swim_info_sorted()
+---
+- []
+...
+swim.cfg({server = listen_uri, members = members})
+---
+- true
+...
+swim_info_sorted()
+---
+- - - 127.0.0.1:listen_port
+    - status: alive
+  - - 192.168.0.1:3333
+    - status: alive
+  - - 192.168.0.2:3333
+    - status: alive
+  - - 192.168.0.3:3333
+    - status: alive
+...
+swim.debug_round_step()
+---
+...
+swim_info_sorted()
+---
+- - - 127.0.0.1:listen_port
+    - status: alive
+  - - 192.168.0.1:3333
+    - status: alive
+  - - 192.168.0.2:3333
+    - status: alive
+  - - 192.168.0.3:3333
+    - status: alive
+...
+swim.stop()
+---
+...
+-- Unix is not supported.
+unix_uri = 'unix/:/tmp/anyfile'
+---
+...
+swim.cfg({server = unix_uri})
+---
+- null
+- Unix sockets are not supported
+...
+-- Invalid server and member URI.
+swim.cfg({server = 'bad uri'})
+---
+- null
+- invalid uri "bad uri", called on fd -1
+...
+swim.cfg({members = {'bad uri'}})
+---
+- null
+- invalid uri "bad uri", called on fd -1
+...
+-- Change server URI without stop.
+swim.cfg({server = listen_uri})
+---
+- true
+...
+swim.cfg({server = listen_uri})
+---
+- true
+...
+swim.debug_round_step()
+---
+...
+swim_info_sorted()
+---
+- - - 127.0.0.1:listen_port
+    - status: alive
+...
+swim.stop()
+---
+...
+-- It is ok to have server URI in members list.
+table.insert(members, listen_uri)
+---
+...
+-- Address in use.
+socket = require('socket')
+---
+...
+s = socket("AF_INET", "SOCK_DGRAM", "udp")
+---
+...
+s:bind(listen_host, listen_port)
+---
+- true
+...
+res, err = swim.cfg({server = listen_uri, members = members})
+---
+...
+res
+---
+- null
+...
+err:match('bind, called')
+---
+- bind, called
+...
+swim_info_sorted()
+---
+- []
+...
+s:close()
+---
+- true
+...
+swim.cfg({server = listen_uri, members = members})
+---
+- true
+...
+swim_info_sorted()
+---
+- - - 127.0.0.1:listen_port
+    - status: alive
+  - - 192.168.0.1:3333
+    - status: alive
+  - - 192.168.0.2:3333
+    - status: alive
+  - - 192.168.0.3:3333
+    - status: alive
+...
+swim.stop()
+---
+...
+test_run:cmd("clear filter")
+---
+- true
+...
