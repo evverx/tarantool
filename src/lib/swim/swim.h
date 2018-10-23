@@ -54,6 +54,15 @@ struct swim_transport {
 			  const struct sockaddr *addr, socklen_t addr_size);
 
 	/**
+	 * Send failure detection message. Contains ping, ack.
+	 * Parameters are like sendto().
+	 */
+	ssize_t
+	(*send_failure_detection_msg)(int fd, const void *data, size_t size,
+				      const struct sockaddr *addr,
+				      socklen_t addr_size);
+
+	/**
 	 * Receive a message. Not necessary round or failure
 	 * detection. Before message is received, its type is
 	 * unknown. Parameters are like recvfrom().
