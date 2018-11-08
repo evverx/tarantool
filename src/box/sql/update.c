@@ -147,6 +147,11 @@ sqlite3Update(Parse * pParse,		/* The parser context */
 	int pk_cursor = pParse->nTab++;
 	pTabList->a[0].iCursor = pk_cursor;
 	struct index *pPk = space_index(pTab->space, 0);
+	if (! is_view && index_find(pTab->space, 0) == NULL) {
+		pParse->nErr++;
+		pParse->rc = SQL_TARANTOOL_ERROR;
+		goto update_cleanup;
+	}
 	i = sizeof(int) * def->field_count;
 	aXRef = (int *) region_alloc(&pParse->region, i);
 	if (aXRef == NULL) {

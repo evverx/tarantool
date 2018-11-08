@@ -4567,6 +4567,11 @@ sqlite3WhereBegin(Parse * pParse,	/* The parser context */
 			/* Do nothing */
 		} else if ((pLoop->wsFlags & WHERE_IDX_ONLY) == 0 &&
 			   (wctrlFlags & WHERE_OR_SUBCLAUSE) == 0) {
+			if (index_find(space, 0) == NULL) {
+				pParse->nErr++;
+				pParse->rc = SQL_TARANTOOL_ERROR;
+				goto whereBeginError;
+			}
 			if (pWInfo->eOnePass != ONEPASS_OFF)
 				pWInfo->aiCurOnePass[0] = pTabItem->iCursor;
 			assert(space->index_count > 0);

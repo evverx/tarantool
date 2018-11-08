@@ -117,14 +117,13 @@ sql_space_autoinc_fieldno(struct space *space)
  * SELECT.
  *
  * @param parser Parse context.
- * @param table Table AST object.
- * @retval  true if the table table in database or any of its
- *          indices have been opened at any point in the VDBE
- *          program.
- * @retval  false else.
+ * @param space Space to check read of.
+ * @retval true If the space or any of its indices have been
+ *         opened at any point in the VDBE program.
+ * @retval false Else.
  */
 static bool
-vdbe_has_table_read(struct Parse *parser, const struct Table *table)
+vdbe_has_table_read(struct Parse *parser, const struct space *space)
 {
 	struct Vdbe *v = sqlite3GetVdbe(parser);
 	int last_instr = sqlite3VdbeCurrentAddr(v);
@@ -136,12 +135,12 @@ vdbe_has_table_read(struct Parse *parser, const struct Table *table)
 		 * and Write cursors.
 		 */
 		if (op->opcode == OP_IteratorOpen) {
-			struct space *space = NULL;
+			struct space *space_p4 = NULL;
 			if (op->p4type == P4_SPACEPTR)
-				space = op->p4.space;
+				space_p4 = op->p4.space;
 			else
 				continue;
-			if (space->def->id == table->def->id)
+			if (space_p4->def->id == space->def->id)
 				return true;
 		}
 	}
@@ -315,28 +314,31 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 	if (pTab == NULL)
 		goto insert_cleanup;
 
-	space_id = pTab->def->id;
+	struct space *space = pTab->space;
+	struct space_def *def = space->def;
+	space_id = def->id;
 
 	/* Figure out if we have any triggers and if the table being
 	 * inserted into is a view
 	 */
 	trigger = sql_triggers_exist(pTab, TK_INSERT, NULL, &tmask);
-	bool is_view = pTab->def->opts.is_view;
+	bool is_view = def->opts.is_view;
 	assert((trigger != NULL && tmask != 0) ||
 	       (trigger == NULL && tmask == 0));
 
-	/* If pTab is really a view, make sure it has been initialized.
-	 * ViewGetColumnNames() is a no-op if pTab is not a view.
-	 */
-	if (is_view &&
-	    sql_view_assign_cursors(pParse, pTab->def->opts.sql) != 0)
+	if (is_view && sql_view_assign_cursors(pParse, def->opts.sql) != 0)
 		goto insert_cleanup;
 
-	struct space_def *def = pTab->def;
 	/* Cannot insert into a read-only table. */
 	if (is_view && tmask == 0) {
 		sqlite3ErrorMsg(pParse, "cannot modify %s because it is a view",
 				def->name);
+		goto insert_cleanup;
+	}
+
+	if (! is_view && index_find(space, 0) == NULL) {
+		pParse->nErr++;
+		pParse->rc = SQL_TARANTOOL_ERROR;
 		goto insert_cleanup;
 	}
 
@@ -358,7 +360,7 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 	 * This is the 2nd template.
 	 */
 	if (pColumn == 0 &&
-	    xferOptimization(pParse, pTab->space, pSelect, on_error)) {
+	    xferOptimization(pParse, space, pSelect, on_error)) {
 		assert(trigger == NULL);
 		assert(pList == 0);
 		goto insert_end;
@@ -459,7 +461,7 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 		 * the SELECT statement. Also use a temp table in
 		 * the case of row triggers.
 		 */
-		if (trigger != NULL || vdbe_has_table_read(pParse, pTab))
+		if (trigger != NULL || vdbe_has_table_read(pParse, space))
 			useTempTable = 1;
 
 		if (useTempTable) {
@@ -565,8 +567,6 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 		    sqlite3VdbeAddOp1(v, OP_Yield, dest.iSDParm);
 		VdbeCoverage(v);
 	}
-	struct space *space = space_by_id(pTab->def->id);
-	assert(space != NULL);
 	uint32_t autoinc_fieldno = sql_space_autoinc_fieldno(space);
 	/* Run the BEFORE and INSTEAD OF triggers, if there are any
 	 */
@@ -616,7 +616,7 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 		 * table column affinities.
 		 */
 		if (!is_view)
-			sql_emit_table_affinity(v, pTab->def, regCols + 1);
+			sql_emit_table_affinity(v, def, regCols + 1);
 
 		/* Fire BEFORE or INSTEAD OF triggers */
 		vdbe_code_row_trigger(pParse, trigger, TK_INSERT, 0,
@@ -651,8 +651,7 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 				if (i == (int) autoinc_fieldno) {
 					sqlite3VdbeAddOp2(v,
 							  OP_NextAutoincValue,
-							  pTab->def->id,
-							  iRegStore);
+							  space_id, iRegStore);
 					continue;
 				}
 				struct Expr *dflt = NULL;
@@ -762,7 +761,7 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 					    on_error, endOfLoop, 0);
 		fkey_emit_check(pParse, pTab, 0, regIns, 0);
 		vdbe_emit_insertion_completion(v, space, regIns + 1,
-					       pTab->def->field_count,
+					       def->field_count,
 					       on_error);
 	}
 
