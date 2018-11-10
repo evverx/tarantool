@@ -51,7 +51,7 @@ extern const char *sql_info_key_strs[];
 struct region;
 struct sql_bind;
 struct xrow_header;
-struct mpstream;
+struct vstream;
 
 /** EXECUTE request. */
 struct sql_request {
@@ -74,6 +74,20 @@ struct sql_response {
 	struct port port;
 	/** Prepared SQL statement with metadata. */
 	void *prep_stmt;
+	/**
+	 * SQL response can be dumped into msgpack to be sent via
+	 * iproto or onto Lua stack to be returned into an
+	 * application. In the first case response body has
+	 * explicit field IPROTO_SQL_INFO: {rowcount = ...,
+	 * autoids = ...}. But in case of Lua this field is
+	 * flattened. A result never has 'info' field, it has
+	 * inlined 'rowcount' and 'autoids'. In iproto
+	 * IPROTO_SQL_INFO field is sent mostly to explicitly
+	 * distinguish two response types: DML/DDL vs DQL,
+	 * IPROTO_SQL_INFO vs IPROTO_METADATA. So this flag is set
+	 * by Lua and allows to flatten SQL_INFO fields.
+	 */
+	bool is_info_flattened;
 };
 
 /**
@@ -112,7 +126,7 @@ struct sql_response {
  */
 int
 sql_response_dump(struct sql_response *response, int *keys,
-		  struct mpstream *stream);
+		  struct vstream *stream);
 
 /**
  * Parse the EXECUTE request.

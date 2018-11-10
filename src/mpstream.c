@@ -33,6 +33,8 @@
 #include <assert.h>
 #include <stdint.h>
 #include "msgpuck.h"
+#include "vstream.h"
+#include "port.h"
 
 void
 mpstream_reserve_slow(struct mpstream *stream, size_t size)
@@ -174,4 +176,59 @@ mpstream_encode_bool(struct mpstream *stream, bool val)
         return;
     char *pos = mp_encode_bool(data, val);
     mpstream_advance(stream, pos - data);
+}
+
+static int
+mp_vstream_encode_port(struct vstream *stream, struct port *port)
+{
+	struct mpstream *mpstream = (struct mpstream *)stream;
+	mpstream_flush(mpstream);
+	if (port_dump_msgpack(port, mpstream->ctx) < 0) {
+		/* Failed port dump destroyes the port. */
+		return -1;
+	}
+	mpstream_reset(mpstream);
+	return 0;
+}
+
+static void
+mp_vstream_encode_enum(struct vstream *stream, int64_t num, const char *str)
+{
+	(void)str;
+	if (num < 0)
+		mpstream_encode_int((struct mpstream *)stream, num);
+	else
+		mpstream_encode_uint((struct mpstream *)stream, num);
+}
+
+static void
+mp_vstream_noop(struct vstream *stream, ...)
+{
+	(void) stream;
+}
+
+static const struct vstream_vtab mp_vstream_vtab = {
+	/** encode_array = */ (encode_array_f)mpstream_encode_array,
+	/** encode_map = */ (encode_map_f)mpstream_encode_map,
+	/** encode_uint = */ (encode_uint_f)mpstream_encode_uint,
+	/** encode_int = */ (encode_int_f)mpstream_encode_int,
+	/** encode_float = */ (encode_float_f)mpstream_encode_float,
+	/** encode_double = */ (encode_double_f)mpstream_encode_double,
+	/** encode_strn = */ (encode_strn_f)mpstream_encode_strn,
+	/** encode_nil = */ (encode_nil_f)mpstream_encode_nil,
+	/** encode_bool = */ (encode_bool_f)mpstream_encode_bool,
+	/** encode_enum = */ mp_vstream_encode_enum,
+	/** encode_port = */ mp_vstream_encode_port,
+	/** encode_array_commit = */ (encode_array_commit_f)mp_vstream_noop,
+	/** encode_map_commit = */ (encode_map_commit_f)mp_vstream_noop,
+};
+
+void
+mpvstream_init(struct vstream *stream, void *ctx, mpstream_reserve_f reserve,
+	       mpstream_alloc_f alloc, mpstream_error_f error, void *error_ctx)
+{
+	stream->vtab = &mp_vstream_vtab;
+	assert(sizeof(stream->inheritance_padding) >= sizeof(struct mpstream));
+	mpstream_init((struct mpstream *) stream, ctx, reserve, alloc, error,
+		      error_ctx);
 }

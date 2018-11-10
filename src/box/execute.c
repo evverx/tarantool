@@ -42,7 +42,7 @@
 #include "port.h"
 #include "tuple.h"
 #include "sql/vdbe.h"
-#include "mpstream.h"
+#include "vstream.h"
 
 const char *sql_type_strs[] = {
 	NULL,
@@ -530,12 +530,12 @@ sql_bind(const struct sql_request *request, struct sqlite3_stmt *stmt)
  * @retval -1 Client or memory error.
  */
 static inline int
-sql_get_description(struct sqlite3_stmt *stmt, struct mpstream *stream,
+sql_get_description(struct sqlite3_stmt *stmt, struct vstream *stream,
 		    int column_count)
 {
 	assert(column_count > 0);
-	mpstream_encode_uint(stream, IPROTO_METADATA);
-	mpstream_encode_array(stream, column_count);
+	vstream_encode_enum(stream, IPROTO_METADATA, "metadata");
+	vstream_encode_array(stream, column_count);
 	for (int i = 0; i < column_count; ++i) {
 		const char *name = sqlite3_column_name(stmt, i);
 		const char *type = sqlite3_column_datatype(stmt, i);
@@ -545,12 +545,19 @@ sql_get_description(struct sqlite3_stmt *stmt, struct mpstream *stream,
 		 * column_name simply returns them.
 		 */
 		assert(name != NULL);
-		mpstream_encode_map(stream, 2);
-		mpstream_encode_uint(stream, IPROTO_FIELD_NAME);
-		mpstream_encode_str(stream, name);
-		mpstream_encode_uint(stream, IPROTO_FIELD_TYPE);
-		mpstream_encode_str(stream, type);
+		vstream_encode_map(stream, 2);
+
+		vstream_encode_enum(stream, IPROTO_FIELD_NAME, "name");
+		vstream_encode_str(stream, name);
+		vstream_encode_map_commit(stream);
+
+		vstream_encode_enum(stream, IPROTO_FIELD_TYPE, "type");
+		vstream_encode_str(stream, type);
+		vstream_encode_map_commit(stream);
+
+		vstream_encode_array_commit(stream, i);
 	}
+	vstream_encode_map_commit(stream);
 	return 0;
 }
 
@@ -609,7 +616,7 @@ sql_prepare_and_execute(const struct sql_request *request,
 
 int
 sql_response_dump(struct sql_response *response, int *keys,
-		  struct mpstream *stream)
+		  struct vstream *stream)
 {
 	sqlite3 *db = sql_get();
 	struct sqlite3_stmt *stmt = (struct sqlite3_stmt *) response->prep_stmt;
@@ -621,42 +628,48 @@ err:
 			goto finish;
 		}
 		*keys = 2;
-		mpstream_encode_uint(stream, IPROTO_DATA);
-		mpstream_flush(stream);
-		if (port_dump_msgpack(&response->port, stream->ctx) < 0) {
+		vstream_encode_enum(stream, IPROTO_DATA, "rows");
+		if (vstream_encode_port(stream, &response->port) < 0) {
 			/* Failed port dump destroyes the port. */
 			goto err;
 		}
-		mpstream_reset(stream);
+		vstream_encode_map_commit(stream);
 	} else {
 		*keys = 1;
 		struct stailq *autoinc_id_list =
 			vdbe_autoinc_id_list((struct Vdbe *)stmt);
 		uint32_t map_size = stailq_empty(autoinc_id_list) ? 1 : 2;
-		mpstream_encode_uint(stream, IPROTO_SQL_INFO);
-		mpstream_encode_map(stream, map_size);
 		uint64_t id_count = 0;
 		if (!stailq_empty(autoinc_id_list)) {
 			struct autoinc_id_entry *id_entry;
 			stailq_foreach_entry(id_entry, autoinc_id_list, link)
 				id_count++;
 		}
-
-		mpstream_encode_uint(stream, SQL_INFO_ROW_COUNT);
-		mpstream_encode_uint(stream, db->nChange);
+		if (!response->is_info_flattened) {
+			vstream_encode_enum(stream, IPROTO_SQL_INFO, "info");
+			vstream_encode_map(stream, map_size);
+		}
+		vstream_encode_enum(stream, SQL_INFO_ROW_COUNT, "rowcount");
+		vstream_encode_uint(stream, db->nChange);
+		vstream_encode_map_commit(stream);
 		if (!stailq_empty(autoinc_id_list)) {
-			mpstream_encode_uint(stream,
-					     SQL_INFO_AUTOINCREMENT_IDS);
-			mpstream_encode_array(stream, id_count);
+			vstream_encode_enum(stream, SQL_INFO_AUTOINCREMENT_IDS,
+					    "autoincrement_ids");
+			vstream_encode_array(stream, id_count);
 			struct autoinc_id_entry *id_entry;
+			int i = 0;
 			stailq_foreach_entry(id_entry, autoinc_id_list, link) {
 				int64_t value = id_entry->id;
 				if (id_entry->id >= 0)
-					mpstream_encode_uint(stream, value);
+					vstream_encode_uint(stream, value);
 				else
-					mpstream_encode_int(stream, value);
+					vstream_encode_int(stream, value);
+				vstream_encode_array_commit(stream, i++);
 			}
+			vstream_encode_map_commit(stream);
 		}
+		if (!response->is_info_flattened)
+			vstream_encode_map_commit(stream);
 	}
 finish:
 	port_destroy(&response->port);

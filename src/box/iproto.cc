@@ -62,6 +62,7 @@
 #include "execute.h"
 #include "errinj.h"
 #include "mpstream.h"
+#include "vstream.h"
 
 enum {
 	IPROTO_SALT_SIZE = 32,
@@ -1587,6 +1588,7 @@ tx_process_sql(struct cmsg *m)
 	struct iproto_msg *msg = tx_accept_msg(m);
 	struct obuf *out;
 	struct sql_response response;
+	memset(&response, 0, sizeof(response));
 	bool is_error = false;
 
 	tx_fiber_init(msg->connection->session, msg->header.sync);
@@ -1607,16 +1609,17 @@ tx_process_sql(struct cmsg *m)
 	/* Prepare memory for the iproto header. */
 	if (iproto_prepare_header(out, &header_svp, IPROTO_SQL_HEADER_LEN) != 0)
 		goto error;
-	struct mpstream stream;
-	mpstream_init(&stream, out, obuf_reserve_cb, obuf_alloc_cb,
-		      set_encode_error, &is_error);
+
+	struct vstream stream;
+	mpvstream_init(&stream, out, obuf_reserve_cb, obuf_alloc_cb,
+		       set_encode_error, &is_error);
 	if (is_error)
 		goto error;
 	if (sql_response_dump(&response, &keys, &stream) != 0 || is_error) {
 		obuf_rollback_to_svp(out, &header_svp);
 		goto error;
 	}
-	mpstream_flush(&stream);
+	mpstream_flush((struct mpstream *)&stream);
 	iproto_reply_sql(out, &header_svp, response.sync, schema_version, keys);
 	iproto_wpos_create(&msg->wpos, out);
 	return;

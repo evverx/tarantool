@@ -78,6 +78,13 @@ mpstream_init(struct mpstream *stream, void *ctx,
 	      mpstream_reserve_f reserve, mpstream_alloc_f alloc,
 	      mpstream_error_f error, void *error_ctx);
 
+struct vstream;
+
+/** Initialize a vstream object as an instance of mpstream. */
+void
+mpvstream_init(struct vstream *stream, void *ctx, mpstream_reserve_f reserve,
+	       mpstream_alloc_f alloc, mpstream_error_f error, void *error_ctx);
+
 static inline void
 mpstream_flush(struct mpstream *stream)
 {
