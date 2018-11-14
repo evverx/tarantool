@@ -1384,20 +1384,6 @@ tarantoolSqlNextSeqId(uint64_t *max_id)
 	return tuple_field_u64(tuple, BOX_SEQUENCE_FIELD_ID, max_id);
 }
 
-struct Expr*
-space_column_default_expr(uint32_t space_id, uint32_t fieldno)
-{
-	struct space *space;
-	space = space_cache_find(space_id);
-	assert(space != NULL);
-	assert(space->def != NULL);
-	if (space->def->opts.is_view)
-		return NULL;
-	assert(space->def->field_count > fieldno);
-
-	return space->def->fields[fieldno].default_value_expr;
-}
-
 struct space_def *
 sql_ephemeral_space_def_new(struct Parse *parser, const char *name)
 {

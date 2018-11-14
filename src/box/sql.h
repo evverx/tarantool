@@ -162,17 +162,6 @@ void
 sql_expr_extract_select(struct Parse *parser, struct Select *select);
 
 /**
- * Given space_id and field number, return default value
- * for the field.
- * @param space_id Space ID.
- * @param fieldno Field index.
- * @retval Pointer to AST corresponding to default value.
- * Can be NULL if no DEFAULT specified or it is a view.
- */
-struct Expr*
-space_column_default_expr(uint32_t space_id, uint32_t fieldno);
-
-/**
  * Get server checks list by space_id.
  * @param space_id Space ID.
  * @retval Checks list.

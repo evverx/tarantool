@@ -590,11 +590,12 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 							  regCols + i + 1);
 				} else {
 					struct Expr *dflt = NULL;
-					dflt = space_column_default_expr(
-						space_id,
-						i);
-					sqlite3ExprCode(pParse,
-							dflt,
+					if (! is_view) {
+						struct field_def *f =
+							&def->fields[i];
+						dflt = f->default_value_expr;
+					}
+					sqlite3ExprCode(pParse, dflt,
 							regCols + i + 1);
 				}
 			} else if (useTempTable) {
@@ -654,10 +655,8 @@ sqlite3Insert(Parse * pParse,	/* Parser context */
 							  space_id, iRegStore);
 					continue;
 				}
-				struct Expr *dflt = NULL;
-				dflt = space_column_default_expr(
-					space_id,
-					i);
+				struct Expr *dflt =
+					def->fields[i].default_value_expr;
 				sqlite3ExprCodeFactorable(pParse,
 							  dflt,
 							  iRegStore);
@@ -892,7 +891,7 @@ vdbe_emit_constraint_checks(struct Parse *parse_context, struct Table *tab,
 		/* ABORT is a default error action. */
 		if (on_conflict_nullable == ON_CONFLICT_ACTION_DEFAULT)
 			on_conflict_nullable = ON_CONFLICT_ACTION_ABORT;
-		struct Expr *dflt = space_column_default_expr(def->id, i);
+		struct Expr *dflt = def->fields[i].default_value_expr;
 		if (on_conflict_nullable == ON_CONFLICT_ACTION_REPLACE &&
 		    dflt == NULL)
 			on_conflict_nullable = ON_CONFLICT_ACTION_ABORT;
