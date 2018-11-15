@@ -52,6 +52,7 @@ struct region;
 struct sql_bind;
 struct xrow_header;
 struct vstream;
+struct lua_State;
 
 /** EXECUTE request. */
 struct sql_request {
@@ -140,6 +141,20 @@ sql_response_dump(struct sql_response *response, int *keys,
 int
 xrow_decode_sql(const struct xrow_header *row, struct sql_request *request,
 		struct region *region);
+
+/**
+ * Parse Lua table of SQL parameters and store a result
+ * into the @request->bind, bind_count.
+ * @param L Lua stack to get data from.
+ * @param request Request to save decoded parameters.
+ * @param idx Position of table with parameters on Lua stack.
+ *
+ * @retval  0 Success.
+ * @retval -1 Client or memory error.
+ */
+int
+lua_sql_bind_list_decode(struct lua_State *L, struct sql_request *request,
+			 int idx);
 
 /**
  * Prepare and execute an SQL statement.

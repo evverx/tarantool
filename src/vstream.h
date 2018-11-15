@@ -70,7 +70,10 @@ struct vstream_vtab {
 };
 
 struct vstream {
-	/** Here struct mpstream lives under the hood. */
+	/**
+	 * Here struct mpstream or struct luastream lives under
+	 * the hood.
+	 */
 	char inheritance_padding[64];
 	/** Virtual function table. */
 	const struct vstream_vtab *vtab;
@@ -78,6 +81,9 @@ struct vstream {
 
 void
 mp_vstream_init_vtab(struct vstream *vstream);
+
+void
+lua_vstream_init_vtab(struct vstream *vstream);
 
 static inline void
 vstream_encode_array(struct vstream *stream, uint32_t size)

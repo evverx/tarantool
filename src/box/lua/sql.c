@@ -5,7 +5,10 @@
 #include "box/sql/sqliteInt.h"
 #include "box/info.h"
 #include "lua/utils.h"
+#include "lua/luastream.h"
 #include "info.h"
+#include "box/execute.h"
+#include "vstream.h"
 
 static void
 lua_push_column_names(struct lua_State *L, struct sqlite3_stmt *stmt)
@@ -111,6 +114,38 @@ sqlerror:
 }
 
 static int
+lbox_execute(struct lua_State *L)
+{
+	struct sqlite3 *db = sql_get();
+	if (db == NULL)
+		return luaL_error(L, "not ready");
+
+	size_t length;
+	const char *sql = lua_tolstring(L, 1, &length);
+	if (sql == NULL)
+		return luaL_error(L, "usage: box.execute(sqlstring)");
+
+	struct sql_request request = {};
+	request.sql_text = sql;
+	request.sql_text_len = length;
+	if (lua_gettop(L) == 2 && lua_sql_bind_list_decode(L, &request, 2) != 0)
+		return luaT_error(L);
+	struct sql_response response = {.is_info_flattened = true};
+	if (sql_prepare_and_execute(&request, &response, &fiber()->gc) != 0)
+		return luaT_error(L);
+
+	int keys;
+	struct vstream vstream;
+	luavstream_init(&vstream, L);
+	lua_newtable(L);
+	if (sql_response_dump(&response, &keys, &vstream) != 0) {
+		lua_pop(L, 1);
+		return luaT_error(L);
+	}
+	return 1;
+}
+
+static int
 lua_sql_debug(struct lua_State *L)
 {
 	struct info_handler info;
@@ -124,6 +159,7 @@ box_lua_sqlite_init(struct lua_State *L)
 {
 	static const struct luaL_Reg module_funcs [] = {
 		{"execute", lua_sql_execute},
+		{"new_execute", lbox_execute},
 		{"debug", lua_sql_debug},
 		{NULL, NULL}
 	};

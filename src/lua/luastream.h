@@ -1,7 +1,7 @@
-#ifndef INCLUDES_TARANTOOL_LUA_SQLITE_H
-#define INCLUDES_TARANTOOL_LUA_SQLITE_H
+#ifndef TARANTOOL_LUA_LUASTREAM_H_INCLUDED
+#define TARANTOOL_LUA_LUASTREAM_H_INCLUDED
 /*
- * Copyright 2010-2015, Tarantool AUTHORS, please see AUTHORS file.
+ * Copyright 2010-2018, Tarantool AUTHORS, please see AUTHORS file.
  *
  * Redistribution and use in source and binary forms, with or
  * without modification, are permitted provided that the following
@@ -31,20 +31,17 @@
  * SUCH DAMAGE.
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 struct lua_State;
-struct luastream;
+struct vstream;
 
-void box_lua_sqlite_init(struct lua_State *L);
+struct luastream {
+	struct lua_State *L;
+};
 
 void
 luastream_init(struct luastream *stream, struct lua_State *L);
 
-#ifdef __cplusplus
-}
-#endif
+void
+luavstream_init(struct vstream *stream, struct lua_State *L);
 
-#endif
+#endif /* TARANTOOL_LUA_LUASTREAM_H_INCLUDED */
