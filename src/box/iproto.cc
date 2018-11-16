@@ -1597,7 +1597,8 @@ tx_process_sql(struct cmsg *m)
 		goto error;
 	assert(msg->header.type == IPROTO_EXECUTE);
 	tx_inject_delay();
-	if (sql_prepare_and_execute(&msg->sql, &response, &fiber()->gc) != 0)
+	if (sql_prepare_and_execute(&msg->sql, &response, &fiber()->gc,
+	    ER_SQL_EXECUTE) != 0)
 		goto error;
 	/*
 	 * Take an obuf only after execute(). Else the buffer can

@@ -736,6 +736,8 @@ sql_get_description(struct sqlite3_stmt *stmt, struct vstream *stream,
 		 * column_name simply returns them.
 		 */
 		assert(name != NULL);
+		if (type == NULL)
+			type = "UNKNOWN";
 		vstream_encode_map(stream, 2);
 
 		vstream_encode_enum(stream, IPROTO_FIELD_NAME, "name");
@@ -754,7 +756,7 @@ sql_get_description(struct sqlite3_stmt *stmt, struct vstream *stream,
 
 static inline int
 sql_execute(sqlite3 *db, struct sqlite3_stmt *stmt, struct port *port,
-	    struct region *region)
+	    struct region *region, int error_id)
 {
 	int rc, column_count = sqlite3_column_count(stmt);
 	if (column_count > 0) {
@@ -771,7 +773,7 @@ sql_execute(sqlite3 *db, struct sqlite3_stmt *stmt, struct port *port,
 		assert(rc != SQLITE_ROW && rc != SQLITE_OK);
 	}
 	if (rc != SQLITE_DONE) {
-		diag_set(ClientError, ER_SQL_EXECUTE, sqlite3_errmsg(db));
+		diag_set(ClientError, error_id, sqlite3_errmsg(db));
 		return -1;
 	}
 	return 0;
@@ -779,7 +781,8 @@ sql_execute(sqlite3 *db, struct sqlite3_stmt *stmt, struct port *port,
 
 int
 sql_prepare_and_execute(const struct sql_request *request,
-			struct sql_response *response, struct region *region)
+			struct sql_response *response, struct region *region,
+			int error_id)
 {
 	const char *sql = request->sql_text;
 	uint32_t len = request->sql_text_len;
@@ -790,7 +793,7 @@ sql_prepare_and_execute(const struct sql_request *request,
 		return -1;
 	}
 	if (sqlite3_prepare_v2(db, sql, len, &stmt, NULL) != SQLITE_OK) {
-		diag_set(ClientError, ER_SQL_EXECUTE, sqlite3_errmsg(db));
+		diag_set(ClientError, error_id, sqlite3_errmsg(db));
 		return -1;
 	}
 	assert(stmt != NULL);
@@ -798,7 +801,7 @@ sql_prepare_and_execute(const struct sql_request *request,
 	response->prep_stmt = stmt;
 	response->sync = request->sync;
 	if (sql_bind(request, stmt) == 0 &&
-	    sql_execute(db, stmt, &response->port, region) == 0)
+	    sql_execute(db, stmt, &response->port, region, error_id) == 0)
 		return 0;
 	port_destroy(&response->port);
 	sqlite3_finalize(stmt);
