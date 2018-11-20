@@ -352,3 +352,22 @@ rows == expected_rows
 lsn == expected_lsn
 box.cfg{too_long_threshold = too_long_threshold}
 s:drop()
+
+--
+-- gh-1607: on_shutdown triggers.
+--
+f = function() print('on_shutdown 1') end
+g = function() print('on_shutdown 2') end
+h = function() print('on_shutdown 3') end
+-- check that on_shutdown triggers may yield and sleep.
+fiber = require('fiber')
+trig = function() fiber.sleep(0.01) fiber.yield() print('on_shutdown 4') end
+_ = box.ctl.on_shutdown(f)
+_ = box.ctl.on_shutdown(g)
+_ = box.ctl.on_shutdown(h, g)
+_ = box.ctl.on_shutdown(trig)
+test_run:cmd('restart server default')
+test_run:grep_log('default', 'on_shutdown 1', nil, {noreset=true})
+test_run:grep_log('default', 'on_shutdown 2', nil, {noreset=true})
+test_run:grep_log('default', 'on_shutdown 3', nil, {noreset=true})
+test_run:grep_log('default', 'on_shutdown 4', nil, {noreset=true})
