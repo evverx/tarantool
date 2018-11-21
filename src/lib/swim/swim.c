@@ -183,6 +183,12 @@ enum swim_member_status {
 	 */
 	MEMBER_ALIVE = 0,
 	/**
+	 * If a member has not responded to a ping, it is declared
+	 * as suspected to be dead. After more failed pings it
+	 * is finaly dead.
+	 */
+	MEMBER_SUSPECTED,
+	/**
 	 * The member is considered to be dead. It will disappear
 	 * from the membership, if it is not pinned.
 	 */
@@ -192,6 +198,7 @@ enum swim_member_status {
 
 static const char *swim_member_status_strs[] = {
 	"alive",
+	"suspected",
 	"dead",
 };
 
@@ -622,9 +629,15 @@ enum {
 	ACK_TIMEOUT = 1,
 	/**
 	 * If a member has not been responding to pings this
-	 * number of times, it is considered to be dead.
+	 * number of times, it is suspected to be dead. To confirm
+	 * the death it should fail more pings.
 	 */
-	NO_ACKS_TO_DEAD = 3,
+	NO_ACKS_TO_SUSPECT = 2,
+	/**
+	 * If a member is suspected to be dead, after this number
+	 * of failed pings its death is confirmed.
+	 */
+	NO_ACKS_TO_DEAD = NO_ACKS_TO_SUSPECT + 2,
 	/**
 	 * If a not pinned member confirmed to be dead, it is
 	 * removed from the membership after at least this number
@@ -1047,6 +1060,9 @@ swim_check_acks(struct ev_loop *loop, struct ev_periodic *p, int events)
 		}
 		if (m->failed_pings >= NO_ACKS_TO_DEAD) {
 			m->status = MEMBER_DEAD;
+			swim_member_is_updated(m);
+		} else if (m->failed_pings >= NO_ACKS_TO_SUSPECT) {
+			m->status = MEMBER_SUSPECTED;
 			swim_member_is_updated(m);
 		}
 		swim_io_task_push(&m->ping_task);
@@ -1537,7 +1553,11 @@ swim_cfg(const char **member_uris, int member_uri_count, const char *server_uri,
 		free(cfg);
 		for (int i = 0; i < new_cfg_size; ++i) {
 			new_cfg[i]->is_pinned = true;
-			new_cfg[i]->status = MEMBER_ALIVE;
+			/*
+			 * Real status is unknown, so a new member
+			 * can not be alive.
+			 */
+			new_cfg[i]->status = MEMBER_SUSPECTED;
 		}
 		cfg = new_cfg;
 		cfg_size = new_cfg_size;

@@ -42,13 +42,13 @@ swim.cfg({members = members})
 swim_info_sorted()
 ---
 - - - 192.168.0.1:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.2:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.3:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
 ...
 swim.stop()
@@ -68,13 +68,13 @@ swim_info_sorted()
     - status: alive
       incarnation: 0
   - - 192.168.0.1:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.2:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.3:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
 ...
 swim.debug_round_step()
@@ -86,13 +86,13 @@ swim_info_sorted()
     - status: alive
       incarnation: 0
   - - 192.168.0.1:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.2:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.3:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
 ...
 swim.stop()
@@ -180,16 +180,16 @@ swim.cfg({server = listen_uri, members = members})
 swim_info_sorted()
 ---
 - - - 127.0.0.1:listen_port
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.1:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.2:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
   - - 192.168.0.3:3333
-    - status: alive
+    - status: suspected
       incarnation: 0
 ...
 swim.stop()
