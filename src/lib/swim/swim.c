@@ -43,11 +43,11 @@
  *
  * Optional:
  * - do not send self.
- * - cache encoded batch.
  * - refute immediately.
  * - indirect ping.
  * - increment own incarnation on each round.
  * - attach dst incarnation to ping.
+ * - fix errors in sio_listen/bind.
  */
 
 static ssize_t
@@ -224,6 +224,13 @@ struct swim_member {
 	 * Position in a queue of members in the current round.
 	 */
 	struct rlist in_queue_round;
+	/**
+	 * It is true, if the member is being sent in the current
+	 * SWIM round, so it is encoded into cached round msg.
+	 * When this flag is true, and the member has changed or
+	 * removed, the cached round msg is invalidated.
+	 */
+	bool is_being_sent_in_this_round;
 	/**
 	 *
 	 *               Failure detection component
@@ -674,6 +681,27 @@ static int cfg_size = 0;
  */
 static struct swim_member **shuffled_members = NULL;
 static int shuffled_members_size = 0;
+/**
+ * When a new round starts, it builds a new message consisting of
+ * up to 3 components. This message is then being handed out to
+ * the cluster members. Most of time the message remains unchanged
+ * and can be cached to do not rebuild it on each step. It should
+ * be invalidated in 2 cases only: a member, encoded here, has
+ * changed its attributes (incarnation, status); a member, encoded
+ * here, is dead too long and removed.
+ */
+static char *cached_round_msg = NULL;
+/**
+ * Payload size in the cached_round_msg buffer. Capacity is
+ * UDP packet size.
+ */
+static int cached_round_msg_size = 0;
+
+static inline void
+cached_round_msg_invalidate(void)
+{
+	cached_round_msg_size = 0;
+}
 
 /** Queue of io tasks ready to push now. */
 static RLIST_HEAD(queue_output);
@@ -699,6 +727,8 @@ static void
 swim_member_is_updated(struct swim_member *member)
 {
 	swim_schedule_event(member);
+	if (member->is_being_sent_in_this_round)
+		cached_round_msg_invalidate();
 }
 
 /**
@@ -745,6 +775,7 @@ swim_member_new(const struct sockaddr_in *addr, enum swim_member_status status,
 	}
 	member->status = status;
 	member->addr = *addr;
+	member->is_being_sent_in_this_round = false;
 	member->incarnation = incarnation;
 	member->is_pinned = false;
 	member->failed_pings = 0;
@@ -784,6 +815,8 @@ swim_find_member(const struct sockaddr_in *addr)
 static inline void
 swim_member_delete(struct swim_member *member)
 {
+	if (member->is_being_sent_in_this_round)
+		cached_round_msg_invalidate();
 	uint64_t key = sockaddr_in_hash(&member->addr);
 	mh_int_t rc = mh_i64ptr_find(members, key, NULL);
 	assert(rc != mh_end(members));
@@ -828,6 +861,7 @@ swim_shuffle_members(void)
 		int j = rand() / (RAND_MAX / (i + 1) + 1);
 		SWAP(shuffled_members[i], shuffled_members[j]);
 	}
+	cached_round_msg_invalidate();
 	return 0;
 }
 
@@ -864,12 +898,24 @@ calculate_bin_batch_size(int header_size, int member_size, int avail_size)
 }
 
 static int
-swim_encode_round_msg(char *buffer, int size)
+swim_encode_round_msg(void)
 {
-	char *start = buffer;
 	if ((shuffled_members == NULL || rlist_empty(&queue_round)) &&
 	    swim_new_round() != 0)
 		return -1;
+	if (cached_round_msg_size > 0)
+		return 0;
+	if (cached_round_msg == NULL) {
+		cached_round_msg = malloc(UDP_PACKET_SIZE);
+		if (cached_round_msg == NULL) {
+			diag_set(OutOfMemory, UDP_PACKET_SIZE, "malloc",
+				 "cached_round_msg");
+			return -1;
+		}
+	}
+	char *buffer = cached_round_msg;
+	int i, size = UDP_PACKET_SIZE;
+
 	/* -1 - for the root map header. */
 	assert((uint)size > sizeof(struct swim_fd_header_bin) + 1);
 	size -= sizeof(struct swim_fd_header_bin) + 1;
@@ -902,7 +948,7 @@ swim_encode_round_msg(char *buffer, int size)
 		memcpy(buffer, &diss_header_bin, sizeof(diss_header_bin));
 		buffer += sizeof(diss_header_bin);
 
-		int i = 0;
+		i = 0;
 		struct swim_member *member, *tmp;
 		struct swim_event_bin event_bin;
 		swim_event_bin_create(&event_bin);
@@ -919,8 +965,9 @@ swim_encode_round_msg(char *buffer, int size)
 		event_count -= diss_batch_size;
 	}
 
+	i = 0;
 	if (ae_batch_size == 0)
-		return buffer - start;
+		goto end;
 	struct swim_anti_entropy_header_bin ae_header_bin;
 	swim_anti_entropy_header_bin_create(&ae_header_bin, ae_batch_size);
 	memcpy(buffer, &ae_header_bin, sizeof(ae_header_bin));
@@ -928,13 +975,18 @@ swim_encode_round_msg(char *buffer, int size)
 
 	struct swim_member_bin member_bin;
 	swim_member_bin_create(&member_bin);
-	for (int i = 0; i < ae_batch_size; ++i) {
+	for (; i < ae_batch_size; ++i) {
 		struct swim_member *member = shuffled_members[i];
+		member->is_being_sent_in_this_round = true;
 		swim_member_bin_reset(&member_bin, member);
 		memcpy(buffer, &member_bin, sizeof(member_bin));
 		buffer += sizeof(member_bin);
 	}
-	return buffer - start;
+end:
+	for (; i < shuffled_members_size; ++i)
+		shuffled_members[i]->is_being_sent_in_this_round = false;
+	cached_round_msg_size = buffer - cached_round_msg;
+	return 0;
 }
 
 /**
@@ -946,9 +998,7 @@ swim_send_round_msg(struct swim_io_task *task)
 {
 	(void) task;
 	assert(task->cb == swim_send_round_msg);
-	char buffer[UDP_PACKET_SIZE];
-	int size = swim_encode_round_msg(buffer, UDP_PACKET_SIZE);
-	if (size < 0) {
+	if (swim_encode_round_msg() != 0) {
 		diag_log();
 		goto end;
 	}
@@ -961,7 +1011,8 @@ swim_send_round_msg(struct swim_io_task *task)
 	say_verbose("SWIM: send to %s",
 		    sio_strfaddr((struct sockaddr *) &m->addr,
 				 sizeof(m->addr)));
-	if (transport.send_round_msg(output.fd, buffer, size,
+	if (transport.send_round_msg(output.fd, cached_round_msg,
+				     cached_round_msg_size,
 				     (struct sockaddr *) &m->addr,
 				     sizeof(m->addr)) == -1)
 		diag_log();
