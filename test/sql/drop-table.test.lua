@@ -119,3 +119,11 @@ fk_constraint_count == #box.space._fk_constraint:select()
 box.session.su('admin')
 
 box.schema.user.drop('tmp')
+
+format = {{name = 'id', type = 'integer'}}
+s = box.schema.space.create('test', {format=format})
+-- Should do nothing
+box.sql.execute('delete from "test"')
+-- Should do nothing
+box.sql.execute('delete from "test" where "id" = 100')
+s:drop()

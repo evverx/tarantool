@@ -159,8 +159,10 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 	struct space *space = table->space;
 	bool is_view = space->def->opts.is_view;
 
-	/* If table is really a view, make sure it has been
-	 * initialized.
+	/*
+	 * If table is really a view, make sure it has been
+	 * initialized. Do nothing in case it isn't an view
+	 * and has no PK.
 	 */
 	if (is_view) {
 		if (sql_view_assign_cursors(parse, table->def->opts.sql) != 0)
@@ -171,6 +173,8 @@ sql_table_delete_from(struct Parse *parse, struct SrcList *tab_list,
 					" view", space->def->name);
 			goto delete_from_cleanup;
 		}
+	} else if (index_find(space, 0) == NULL) {
+		goto delete_from_cleanup;
 	}
 
 	/* Assign cursor numbers to the table and all its indices.
