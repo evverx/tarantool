@@ -17,7 +17,10 @@ s = box.space._schema
 -- xlog otherwise the server believes that there
 -- is an lsn gap during recovery.
 --
+-- The first WAL will start with lsn 11.
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 10)
 s:replace{"key", 'test 1'}
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 0)
 box.info.vclock
 box.error.injection.set("ERRINJ_WAL_WRITE", true)
 t = {}
@@ -33,12 +36,9 @@ for i=1,box.cfg.rows_per_wal do
 end;
 test_run:cmd("setopt delimiter ''");
 t
---
--- Before restart: our LSN is 1, because
--- LSN is promoted in tx only on successful
--- WAL write.
---
 name = string.match(arg[0], "([^,]+)%.lua")
+-- Vclock is promoted on a successful WAL write.
+-- Last successfully written row {"key", "test 1"} has LSN 11.
 box.info.vclock
 require('fio').glob(name .. "/*.xlog")
 test_run:cmd("restart server panic")
@@ -69,7 +69,9 @@ box.error.injection.set("ERRINJ_WAL_WRITE", false)
 -- but it's *inside* a single WAL, so doesn't
 -- affect WAL search in recover_remaining_wals()
 --
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 10)
 s:replace{'key', 'test 2'}
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 0)
 --
 -- notice that vclock before and after
 -- server stop is the same -- because it's
@@ -101,8 +103,10 @@ box.space._schema:replace{"key", 'test 3'}
 box.info.vclock
 require('fio').glob(name .. "/*.xlog")
 box.error.injection.set("ERRINJ_WAL_WRITE", false)
--- then a success
+-- Now write a row after a gap.
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 2)
 box.space._schema:replace{"key", 'test 4'}
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 0)
 box.info.vclock
 require('fio').glob(name .. "/*.xlog")
 -- restart is ok
@@ -113,24 +117,26 @@ box.space._schema:select{'key'}
 -- that appeared due to a disk error and no files is
 -- actually missing, we won't panic on recovery.
 --
-box.space._schema:replace{'key', 'test 4'} -- creates new WAL
-box.error.injection.set("ERRINJ_WAL_WRITE_DISK", true)
-box.space._schema:replace{'key', 'test 5'} -- fails, makes gap
-box.snapshot() -- fails, rotates WAL
-box.error.injection.set("ERRINJ_WAL_WRITE_DISK", false)
-box.space._schema:replace{'key', 'test 5'} -- creates new WAL
-box.error.injection.set("ERRINJ_WAL_WRITE_DISK", true)
-box.space._schema:replace{'key', 'test 6'} -- fails, makes gap
-box.snapshot() -- fails, rotates WAL
-box.space._schema:replace{'key', 'test 6'} -- fails, creates empty WAL
-name = string.match(arg[0], "([^,]+)%.lua")
-require('fio').glob(name .. "/*.xlog")
+test_run:cmd("setopt delimiter ';'")
+for i = 1, box.cfg.rows_per_wal do
+    box.space._schema:replace{"key", "test 5"}
+end;
+test_run:cmd("setopt delimiter ''");
+box.error.injection.set("ERRINJ_WAL_LSN_GAP", 1)
+box.space._schema:replace{"key", "test 6"}
 test_run:cmd("restart server panic")
-box.space._schema:select{'key'}
--- Check that we don't create a WAL in the gap between the last two.
-box.space._schema:replace{'key', 'test 6'}
+box.space._schema:get{"key"}
+box.info.vclock
 name = string.match(arg[0], "([^,]+)%.lua")
 require('fio').glob(name .. "/*.xlog")
-test_run:cmd('switch default')
+-- Make sure we don't create a WAL in the gap between
+-- the last two.
+box.space._schema:replace{"key", "test 7"}
+test_run:cmd("restart server panic")
+box.info.vclock
+name = string.match(arg[0], "([^,]+)%.lua")
+require('fio').glob(name .. "/*.xlog")
+
+test_run:cmd("switch default")
 test_run:cmd("stop server panic")
 test_run:cmd("cleanup server panic")

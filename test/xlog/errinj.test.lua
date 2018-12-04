@@ -12,9 +12,13 @@ test_run:cmd('restart server default with cleanup=1')
 
 box.error.injection.set("ERRINJ_WAL_WRITE", true)
 box.space._schema:insert{"key"}
+box.info.lsn
 test_run:cmd('restart server default')
+box.info.lsn
 box.space._schema:insert{"key"}
+box.info.lsn
 test_run:cmd('restart server default')
+box.info.lsn
 box.space._schema:get{"key"}
 box.space._schema:delete{"key"}
 -- list all the logs

@@ -21,12 +21,28 @@ box.space._schema:insert{"key"}
 ---
 - error: Failed to write to disk
 ...
+box.info.lsn
+---
+- 0
+...
 test_run:cmd('restart server default')
+box.info.lsn
+---
+- 0
+...
 box.space._schema:insert{"key"}
 ---
 - ['key']
 ...
+box.info.lsn
+---
+- 1
+...
 test_run:cmd('restart server default')
+box.info.lsn
+---
+- 1
+...
 box.space._schema:get{"key"}
 ---
 - ['key']
@@ -43,7 +59,6 @@ require('fio').glob(name .. "/*.xlog")
 ---
 - - xlog/00000000000000000000.xlog
   - xlog/00000000000000000001.xlog
-  - xlog/00000000000000000002.xlog
 ...
 test_run:cmd('restart server default with cleanup=1')
 -- gh-881 iproto request with wal IO error
