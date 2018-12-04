@@ -1291,18 +1291,29 @@ resolveSelectStep(Walker * pWalker, Select * p)
 		sNC.ncFlags = NC_AllowAgg;
 		sNC.pSrcList = p->pSrc;
 		sNC.pNext = pOuterNC;
+		struct ExprList_item *item = p->pEList->a;
 		/* Resolve names in the result set. */
-		for (i = 0; i < p->pEList->nExpr; i++) {
-			struct Expr *expr = p->pEList->a[i].pExpr;
+		for (i = 0; i < p->pEList->nExpr; ++i, ++item) {
 			u16 has_agg_flag = sNC.ncFlags & NC_HasAgg;
 			sNC.ncFlags &= ~NC_HasAgg;
-			if (sqlite3ResolveExprNames(&sNC, expr))
+			if (sqlite3ResolveExprNames(&sNC, item->pExpr) != 0)
 				return WRC_Abort;
-			bool is_const =
-				sqlite3ExprIsConstantOrFunction(expr, 0);
-			is_all_select_agg &= (sNC.ncFlags & NC_HasAgg) != 0 ||
-					     is_const;
+			if ((sNC.ncFlags & NC_HasAgg) == 0 &&
+			    !sqlite3ExprIsConstantOrFunction(item->pExpr, 0)) {
+				is_all_select_agg = false;
+				sNC.ncFlags |= has_agg_flag;
+				break;
+			}
 			sNC.ncFlags |= has_agg_flag;
+		}
+		/*
+		 * Finish iteration for is_all_select_agg == false
+		 * and do not care about flags anymore.
+		 */
+		for (; i < p->pEList->nExpr; ++i, ++item) {
+			assert(! is_all_select_agg);
+			if (sqlite3ResolveExprNames(&sNC, item->pExpr) != 0)
+				return WRC_Abort;
 		}
 
 		/* If there are no aggregate functions in the result-set, and no GROUP BY
@@ -1335,12 +1346,10 @@ resolveSelectStep(Walker * pWalker, Select * p)
 				return WRC_Abort;
 			if ((having_nc.ncFlags & NC_HasAgg) == 0 ||
 			    (having_nc.ncFlags & NC_HasUnaggregatedId) != 0) {
-				const char *err_msg =
-					tt_sprintf("HAVING argument must "
-						   "appear in the GROUP BY "
-						   "clause or be used in an "
-						   "aggregate function");
-				diag_set(ClientError, ER_SQL, err_msg);
+				diag_set(ClientError, ER_SQL, "HAVING "\
+					 "argument must appear in the GROUP BY "
+					 "clause or be used in an aggregate "\
+					 "function");
 				pParse->nErr++;
 				pParse->rc = SQL_TARANTOOL_ERROR;
 				return WRC_Abort;
