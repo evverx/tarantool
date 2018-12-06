@@ -155,6 +155,14 @@ struct tuple_format {
 	 */
 	uint16_t field_map_size;
 	/**
+	 * Template field map initialized with zeros for nullable
+	 * and UINT32_MAX for other fields. It is used for the
+	 * tuple_init_field_map initial fill of a new field map
+	 * in order to check that all fields were filled out after
+	 * parsing a data tuple.
+	 */
+	uint32_t *field_map_template;
+	/**
 	 * If not set (== 0), any tuple in the space can have any number of
 	 * fields. If set, each tuple must have exactly this number of fields.
 	 */

@@ -208,6 +208,42 @@ tuple_format_create(struct tuple_format *format, struct key_def * const *keys,
 		return -1;
 	}
 	format->field_map_size = field_map_size;
+	/**
+	 * Allocate field_map_template used for field map
+	 * initialization and validation.
+	 * Read tuple_format:field_map_template description for
+	 * more details.
+	 */
+	uint32_t *field_map_template = malloc(field_map_size);
+	if (field_map_template == NULL) {
+		diag_set(OutOfMemory, field_map_size, "malloc",
+			 "field_map_template");
+		return -1;
+	}
+	format->field_map_template = field_map_template;
+	/*
+	 * Mark all template_field_map items as uninitialized
+	 * with UINT32_MAX magic value.
+	 */
+	field_map_template = (uint32_t *)((char *)field_map_template +
+					  format->field_map_size);
+	for (int i = -1; i >= current_slot; i--)
+		field_map_template[i] = UINT32_MAX;
+	struct tuple_field *field;
+	struct json_token *root = (struct json_token *)&format->fields.root;
+	json_tree_foreach_entry_preorder(field, root, struct tuple_field,
+					 token) {
+		/*
+		 * Initialize nullable fields in
+		 * field_map_template with 0 as we shouldn't
+		 * raise error when field_map item for nullable
+		 * field was not calculated during tuple parse
+		 * (when tuple lacks such field).
+		 */
+		if (field->offset_slot != TUPLE_OFFSET_SLOT_NIL &&
+		    tuple_field_is_nullable(field))
+			field_map_template[field->offset_slot] = 0;
+	}
 	return 0;
 }
 
@@ -330,6 +366,7 @@ tuple_format_alloc(struct key_def * const *keys, uint16_t key_count,
 	format->index_field_count = index_field_count;
 	format->exact_field_count = 0;
 	format->min_field_count = 0;
+	format->field_map_template = NULL;
 	return format;
 error:
 	tuple_format_destroy_fields(format);
@@ -341,6 +378,7 @@ error:
 static inline void
 tuple_format_destroy(struct tuple_format *format)
 {
+	free(format->field_map_template);
 	tuple_format_destroy_fields(format);
 	tuple_dictionary_unref(format->dict);
 }
@@ -424,6 +462,25 @@ tuple_format1_can_store_format2_tuples(struct tuple_format *format1,
 	return true;
 }
 
+/**
+ * Verify that all offset_slots has been initialized in field_map.
+ * Routine relies on the field_map memory has been filled from the
+ * field_map_template containing UINT32_MAX marker for required
+ * fields.
+ */
+static int
+tuple_field_map_validate(const struct tuple_format *format, uint32_t *field_map)
+{
+	int32_t field_map_items =
+		(int32_t)(format->field_map_size/sizeof(field_map[0]));
+	for (int32_t i = -1; i >= -field_map_items; i--) {
+		if (field_map[i] != UINT32_MAX)
+			continue;
+		return -1;
+	}
+	return 0;
+}
+
 /** @sa declaration for details. */
 int
 tuple_init_field_map(const struct tuple_format *format, uint32_t *field_map,
@@ -449,44 +506,56 @@ tuple_init_field_map(const struct tuple_format *format, uint32_t *field_map,
 			 (unsigned) format->min_field_count);
 		return -1;
 	}
-
-	/* first field is simply accessible, so we do not store offset to it */
-	enum mp_type mp_type = mp_typeof(*pos);
-	const struct tuple_field *field =
-		tuple_format_field((struct tuple_format *)format, 0);
-	if (validate &&
-	    key_mp_type_validate(field->type, mp_type, ER_FIELD_TYPE,
-				 TUPLE_INDEX_BASE, tuple_field_is_nullable(field)))
-		return -1;
-	mp_next(&pos);
-	/* other fields...*/
-	uint32_t i = 1;
 	uint32_t defined_field_count = MIN(field_count, validate ?
 					   tuple_format_field_count(format) :
 					   format->index_field_count);
-	if (field_count < format->index_field_count) {
-		/*
-		 * Nullify field map to be able to detect by 0,
-		 * which key fields are absent in tuple_field().
-		 */
+	/*
+	 * Initialize memory with zeros when no validation is
+	 * required as it is reserved field_map value for nullable
+	 * fields.
+	 */
+	if (!validate) {
 		memset((char *)field_map - format->field_map_size, 0,
 		       format->field_map_size);
+	} else {
+		memcpy((char *)field_map - format->field_map_size,
+		       format->field_map_template, format->field_map_size);
 	}
-	for (; i < defined_field_count; ++i) {
-		field = tuple_format_field((struct tuple_format *)format, i);
-		mp_type = mp_typeof(*pos);
-		if (validate &&
-		    key_mp_type_validate(field->type, mp_type, ER_FIELD_TYPE,
-					 i + TUPLE_INDEX_BASE,
-					 tuple_field_is_nullable(field)))
-			return -1;
-		if (field->offset_slot != TUPLE_OFFSET_SLOT_NIL) {
-			field_map[field->offset_slot] =
-				(uint32_t) (pos - tuple);
+	struct json_tree *tree = (struct json_tree *)&format->fields;
+	struct json_token *parent = &tree->root;
+	struct json_token token;
+	token.type = JSON_TOKEN_NUM;
+	token.num = 0;
+	while ((uint32_t)token.num < defined_field_count) {
+		struct tuple_field *field =
+			json_tree_lookup_entry(tree, parent, &token,
+					       struct tuple_field, token);
+		enum mp_type type = mp_typeof(*pos);
+		if (field != NULL) {
+			bool is_nullable = tuple_field_is_nullable(field);
+			if (validate &&
+			    key_mp_type_validate(field->type, type,
+						 ER_FIELD_TYPE, token.num + 1,
+						 is_nullable) != 0)
+				return -1;
+			if (field->offset_slot != TUPLE_OFFSET_SLOT_NIL) {
+				field_map[field->offset_slot] =
+					(uint32_t)(pos - tuple);
+			}
 		}
+		token.num++;
 		mp_next(&pos);
-	}
-	return 0;
+	};
+	if (!validate)
+		return 0;
+	int rc = tuple_field_map_validate(format, field_map);
+	/*
+	 * As assert field_count >= min_field_count has already
+	 * tested and all first-level fields has parsed, all
+	 * offset_slots must be initialized.
+	 */
+	assert(rc == 0);
+	return rc;
 }
 
 uint32_t
