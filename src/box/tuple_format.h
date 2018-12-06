@@ -114,6 +114,8 @@ struct tuple_field {
 	struct coll *coll;
 	/** Collation identifier. */
 	uint32_t coll_id;
+	/** Field unique identifier in tuple_format. */
+	uint32_t id;
 	/** Link in tuple_format::fields. */
 	struct json_token token;
 };
@@ -182,6 +184,27 @@ struct tuple_format {
 	 */
 	struct tuple_dictionary *dict;
 	/**
+	 * A maximum depth of fields subtree. This information
+	 * is required for allocating stack for tuple parse
+	 * context during tuple_init_field_map call.
+	 */
+	uint32_t max_path_tokens;
+	/**
+	 * Total count of format fields in fields subtree.
+	 * This information is required to allocate iov array
+	 * argument for vy_stmt_tuple_restore_raw routine that
+	 * is able to store extracted key iov descriptor for each
+	 * field identified by id.
+	 */
+	uint32_t total_field_count;
+	/**
+	 * Calculated size of vinyl's secondary key tuple lacking
+	 * all leaf fields. This information is required in
+	 * vy_stmt_new_surrogate_from_key routine to estimate
+	 * stmt tuple size withut tree traversal.
+	 */
+	uint32_t vy_stmt_meta_size;
+	/**
 	 * Fields comprising the format, organized in a tree.
 	 * First level nodes correspond to tuple fields.
 	 * Deeper levels define indexed JSON paths within
@@ -216,6 +239,25 @@ tuple_format_field(struct tuple_format *format, uint32_t fieldno)
 	return json_tree_lookup_entry(&format->fields, &format->fields.root,
 				      &token, struct tuple_field, token);
 }
+
+/**
+ * Lookup field by relative JSON path and root fieldno in
+ * format:fields tree.
+*/
+static inline struct tuple_field *
+tuple_format_field_by_path(struct tuple_format *format, uint32_t fieldno,
+			   const char *path, uint32_t path_len)
+{
+	uint32_t field_count = tuple_format_field_count(format);
+	if (fieldno >= field_count)
+		return NULL;
+	struct tuple_field *root = tuple_format_field(format, fieldno);
+	assert(root != NULL);
+	return json_tree_lookup_path_entry(&format->fields, &root->token,
+					   path, path_len, TUPLE_INDEX_BASE,
+					   struct tuple_field, token);
+}
+
 
 extern struct tuple_format **tuple_formats;
 
@@ -418,6 +460,18 @@ tuple_field_raw_by_name(struct tuple_format *format, const char *tuple,
 }
 
 /**
+ * Retrieve msgpack data by JSON path.
+ * @param data Pointer to msgpack with data.
+ * @param path The path to process.
+ * @param path_len The length of the @path.
+ * @retval 0 On success.
+ * @retval >0 On path parsing error, invalid character position.
+ */
+int
+tuple_field_go_to_path(const char **data, const char *path,
+		       uint32_t path_len);
+
+/**
  * Get tuple field by its path.
  * @param format Tuple format.
  * @param tuple MessagePack tuple's body.
@@ -436,6 +490,12 @@ tuple_field_raw_by_path(struct tuple_format *format, const char *tuple,
                         uint32_t path_len, uint32_t path_hash,
                         const char **field);
 
+/** Internal function, use tuple_field_by_part_raw instead. */
+int
+tuple_field_by_part_raw_slowpath(struct tuple_format *format, const char *data,
+				 const uint32_t *field_map,
+				 struct key_part *part, const char **raw);
+
 /**
  * Get a tuple field pointed to by an index part.
  * @param format Tuple format.
@@ -445,10 +505,19 @@ tuple_field_raw_by_path(struct tuple_format *format, const char *tuple,
  * @retval Field data if the field exists or NULL.
  */
 static inline const char *
-tuple_field_by_part_raw(const struct tuple_format *format, const char *data,
+tuple_field_by_part_raw(struct tuple_format *format, const char *data,
 			const uint32_t *field_map, struct key_part *part)
 {
-	return tuple_field_raw(format, data, field_map, part->fieldno);
+	if (likely(part->path == NULL)) {
+		return tuple_field_raw(format, data, field_map, part->fieldno);
+	} else {
+		const char *raw;
+		MAYBE_UNUSED int rc =
+			tuple_field_by_part_raw_slowpath(format, data,
+							 field_map, part, &raw);
+		assert(rc == 0);
+		return raw;
+	}
 }
 
 #if defined(__cplusplus)
