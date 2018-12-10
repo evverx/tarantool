@@ -1693,7 +1693,15 @@ box_free(void)
 		gc_free();
 		engine_shutdown();
 		wal_thread_stop();
+		is_box_configured = false;
 	}
+}
+
+void
+box_shutdown_wal(void)
+{
+	if (is_box_configured)
+		wal_thread_stop();
 }
 
 static void

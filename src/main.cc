@@ -83,6 +83,7 @@ static char *script = NULL;
 static char *pid_file = NULL;
 static char **main_argv;
 static int main_argc;
+
 /** Signals handled after start as part of the event loop. */
 static ev_signal ev_sigs[6];
 static const int ev_sig_count = sizeof(ev_sigs)/sizeof(*ev_sigs);
@@ -119,11 +120,33 @@ sig_checkpoint(ev_loop * /* loop */, struct ev_signal * /* w */,
 	fiber_wakeup(f);
 }
 
+static int
+on_exit_f(va_list ap)
+{
+	(void) ap;
+	/* Terminate the main event loop. */
+	ev_break(loop(), EVBREAK_ALL);
+	return 0;
+}
+
+void
+tarantool_exit(void)
+{
+	struct fiber *f = fiber_new("on_shutdown", on_exit_f);
+	if (f == NULL) {
+		say_warn("failed to allocate a fiber to run shutdown routines.");
+		ev_break(loop(), EVBREAK_ALL);
+		return;
+	}
+	fiber_wakeup(f);
+}
+
 static void
 signal_cb(ev_loop *loop, struct ev_signal *w, int revents)
 {
 	(void) w;
 	(void) revents;
+	(void) loop;
 
 	/**
 	 * If running in daemon mode, complain about possibly
@@ -135,8 +158,8 @@ signal_cb(ev_loop *loop, struct ev_signal *w, int revents)
 	if (pid_file)
 		say_crit("got signal %d - %s", w->signum, strsignal(w->signum));
 	start_loop = false;
-	/* Terminate the main event loop */
-	ev_break(loop, EVBREAK_ALL);
+
+	tarantool_exit();
 }
 
 static void
@@ -535,6 +558,24 @@ load_cfg()
 }
 
 void
+tarantool_atexit(void)
+{
+	box_shutdown_wal();
+
+	/* tarantool_lua_free() was formerly reponsible for terminal reset,
+	 * but it is no longer called
+	 */
+	if (isatty(STDIN_FILENO)) {
+		/*
+		 * Restore terminal state. Doesn't hurt if exiting not
+		 * due to a signal.
+		 */
+		rl_cleanup_after_signal();
+	}
+
+}
+
+void
 tarantool_free(void)
 {
 	/*
@@ -568,16 +609,6 @@ tarantool_free(void)
 #ifdef ENABLE_GCOV
 	__gcov_flush();
 #endif
-	/* tarantool_lua_free() was formerly reponsible for terminal reset,
-	 * but it is no longer called
-	 */
-	if (isatty(STDIN_FILENO)) {
-		/*
-		 * Restore terminal state. Doesn't hurt if exiting not
-		 * due to a signal.
-		 */
-		rl_cleanup_after_signal();
-	}
 	cbus_free();
 #if 0
 	/*
@@ -752,8 +783,7 @@ main(int argc, char **argv)
 		box_init();
 		box_lua_init(tarantool_L);
 
-		/* main core cleanup routine */
-		atexit(tarantool_free);
+		atexit(tarantool_atexit);
 
 		if (!loop())
 			panic("%s", "can't init event loop");
@@ -793,5 +823,6 @@ main(int argc, char **argv)
 	if (start_loop)
 		say_crit("exiting the event loop");
 	/* freeing resources */
+	tarantool_free();
 	return 0;
 }

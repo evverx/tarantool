@@ -78,6 +78,13 @@ void
 box_free(void);
 
 /**
+ *  Kill WAL thread and close journal.
+ *  Called at exit.
+ */
+void
+box_shutdown_wal(void);
+
+/**
  * Load configuration for box library.
  * Panics on error.
  */
