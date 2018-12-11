@@ -209,7 +209,8 @@ evio_service_accept_cb(ev_loop *loop, ev_io *watcher, int events)
 static int
 evio_service_reuse_addr(struct evio_service *service, int fd)
 {
-	if ((service->addr.sa_family != AF_UNIX) || (errno != EADDRINUSE)) {
+	if (service->addr.sa_family != AF_UNIX || errno != EADDRINUSE ||
+	    service->sock_type != SOCK_STREAM) {
 		diag_set(SocketError, sio_socketname(fd),
 			 "evio_service_reuse_addr");
 		return -1;
@@ -248,13 +249,13 @@ evio_service_bind_addr(struct evio_service *service)
 	say_debug("%s: binding to %s...", evio_service_name(service),
 		  sio_strfaddr(&service->addr, service->addr_len));
 	/* Create a socket. */
-	int fd = sio_socket(service->addr.sa_family,
-			    SOCK_STREAM, IPPROTO_TCP);
+	int fd = sio_socket(service->addr.sa_family, service->sock_type,
+			    service->sock_protocol);
 	if (fd < 0)
 		return -1;
 
 	if (evio_setsockopt_server(fd, service->addr.sa_family,
-				   SOCK_STREAM) != 0)
+				   service->sock_type) != 0)
 		goto error;
 
 	if (sio_bind(fd, &service->addr, service->addr_len)) {
@@ -282,6 +283,12 @@ error:
 	return -1;
 }
 
+void
+evio_service_start(struct evio_service *service)
+{
+	ev_io_start(service->loop, &service->ev);
+}
+
 /**
  * Listen on bounded port.
  *
@@ -306,28 +313,45 @@ evio_service_listen(struct evio_service *service)
 		}
 		return -1;
 	}
-	ev_io_start(service->loop, &service->ev);
+	evio_service_start(service);
 	return 0;
 }
 
-void
+static void
 evio_service_init(ev_loop *loop, struct evio_service *service, const char *name,
-		  evio_accept_f on_accept, void *on_accept_param)
+		  int sock_type, int sock_protocol)
 {
 	memset(service, 0, sizeof(struct evio_service));
 	snprintf(service->name, sizeof(service->name), "%s", name);
 
 	service->loop = loop;
-
-	service->on_accept = on_accept;
-	service->on_accept_param = on_accept_param;
+	service->sock_type = sock_type;
+	service->sock_protocol = sock_protocol;
 	/*
 	 * Initialize libev objects to be able to detect if they
 	 * are active or not in evio_service_stop().
 	 */
-	ev_init(&service->ev, evio_service_accept_cb);
 	ev_io_set(&service->ev, -1, 0);
 	service->ev.data = service;
+}
+
+void
+evio_service_init_udp(ev_loop *loop, struct evio_service *service,
+		      const char *name, evio_input_f on_input)
+{
+	evio_service_init(loop, service, name, SOCK_DGRAM, IPPROTO_UDP);
+	ev_init(&service->ev, on_input);
+}
+
+void
+evio_service_init_tcp(ev_loop *loop, struct evio_service *service,
+		      const char *name, evio_accept_f on_accept,
+		      void *on_accept_param)
+{
+	evio_service_init(loop, service, name, SOCK_STREAM, IPPROTO_TCP);
+	service->on_accept = on_accept;
+	service->on_accept_param = on_accept_param;
+	ev_init(&service->ev, evio_service_accept_cb);
 }
 
 /**
@@ -366,7 +390,7 @@ evio_service_bind(struct evio_service *service, const char *uri)
 	struct addrinfo hints, *res;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_socktype = service->sock_type;
 	hints.ai_flags = AI_PASSIVE|AI_ADDRCONFIG;
 
 	/* make no difference between empty string and NULL for host */

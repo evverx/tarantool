@@ -72,6 +72,8 @@ struct evio_service;
 typedef int (*evio_accept_f)(struct evio_service *, int, struct sockaddr *,
 			      socklen_t);
 
+typedef void (*evio_input_f)(struct ev_loop *, struct ev_io *, int);
+
 struct evio_service
 {
 	/** Service name. E.g. 'primary', 'secondary', etc. */
@@ -86,7 +88,9 @@ struct evio_service
 		struct sockaddr_storage addrstorage;
 	};
 	socklen_t addr_len;
-
+	/** Socket type (STREAM/DGRAM) and protocol (TCP/UDP). */
+	int sock_type;
+	int sock_protocol;
 	/**
 	 * A callback invoked on every accepted client socket.
 	 * If a callback returned != 0, the accepted socket is
@@ -102,8 +106,13 @@ struct evio_service
 
 /** Initialize the service. Don't bind to the port yet. */
 void
-evio_service_init(ev_loop *loop, struct evio_service *service, const char *name,
-		  evio_accept_f on_accept, void *on_accept_param);
+evio_service_init_tcp(ev_loop *loop, struct evio_service *service,
+		      const char *name, evio_accept_f on_accept,
+		      void *on_accept_param);
+
+void
+evio_service_init_udp(ev_loop *loop, struct evio_service *service,
+		      const char *name, evio_input_f on_input);
 
 /** Bind service to specified uri */
 int
@@ -116,6 +125,10 @@ evio_service_bind(struct evio_service *service, const char *uri);
  */
 int
 evio_service_listen(struct evio_service *service);
+
+/** Run IO event loop. */
+void
+evio_service_start(struct evio_service *service);
 
 /** If started, stop event flow and close the acceptor socket. */
 void

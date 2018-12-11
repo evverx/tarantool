@@ -1873,8 +1873,8 @@ net_cord_f(va_list /* ap */)
 	mempool_create(&iproto_connection_pool, &cord()->slabc,
 		       sizeof(struct iproto_connection));
 
-	evio_service_init(loop(), &binary, "binary",
-			  iproto_on_accept, NULL);
+	evio_service_init_tcp(loop(), &binary, "binary", iproto_on_accept,
+			      NULL);
 
 
 	/* Init statistics counter */
