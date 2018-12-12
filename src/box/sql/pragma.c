@@ -467,7 +467,6 @@ sqlite3Pragma(Parse * pParse, Token * pId,	/* First part of [schema.]id field */
 	/* Jump to the appropriate pragma handler */
 	switch (pPragma->ePragTyp) {
 
-#ifndef SQLITE_OMIT_FLAG_PRAGMAS
 	case PragTyp_FLAG:{
 			if (zRight == 0) {
 				setPragmaResultColumnNames(v, pPragma);
@@ -496,9 +495,7 @@ sqlite3Pragma(Parse * pParse, Token * pId,	/* First part of [schema.]id field */
 			}
 			break;
 		}
-#endif				/* SQLITE_OMIT_FLAG_PRAGMAS */
 
-#ifndef SQLITE_OMIT_SCHEMA_PRAGMAS
 	case PragTyp_TABLE_INFO:
 		sql_pragma_table_info(pParse, zRight);
 		break;
@@ -535,7 +532,6 @@ sqlite3Pragma(Parse * pParse, Token * pId,	/* First part of [schema.]id field */
 		box_iterator_free(iter);
 		break;
 	}
-#endif				/* SQLITE_OMIT_SCHEMA_PRAGMAS */
 
 	case PragTyp_FOREIGN_KEY_LIST:{
 		if (zRight == NULL)
