@@ -371,11 +371,13 @@ box.space._collation.index.name:delete{'nothing'} -- allowed
 ...
 box.space._collation:auto_increment{'test', 0, 'ICU', 'ru_RU', 42}
 ---
-- error: 'Tuple field 6 type does not match one required by operation: expected map'
+- error: 'Tuple field "opts" type does not match one required by operation: expected
+    map'
 ...
 box.space._collation:auto_increment{'test', 0, 'ICU', 'ru_RU', 'options'}
 ---
-- error: 'Tuple field 6 type does not match one required by operation: expected map'
+- error: 'Tuple field "opts" type does not match one required by operation: expected
+    map'
 ...
 box.space._collation:auto_increment{'test', 0, 'ICU', 'ru_RU', {ping='pong'}}
 ---

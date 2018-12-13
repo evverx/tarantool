@@ -970,7 +970,8 @@ s:replace{50, 50}
 ...
 s:replace{25, box.NULL}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    unsigned'
 ...
 format[2].is_nullable = true
 ---
@@ -1774,7 +1775,8 @@ s:insert{5}
 ...
 s:insert{5, box.NULL}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s.index.secondary:alter{parts={{2, 'unsigned', is_nullable=true}}} -- This is allowed.
 ---
@@ -1782,7 +1784,8 @@ s.index.secondary:alter{parts={{2, 'unsigned', is_nullable=true}}} -- This is al
 -- Without space format setting this fails.
 s:insert{5, box.NULL}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s:insert{5}
 ---
@@ -1801,7 +1804,8 @@ s:format(format) -- This is also allowed.
 -- inserts still fail due to not nullable index parts.
 s:insert{5, box.NULL}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s:insert{5}
 ---
@@ -1838,11 +1842,13 @@ format[2].is_nullable = false
 ...
 s:format(format) -- Fail.
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s.index.secondary:alter{parts={{2, 'unsigned', is_nullable=false}}} -- Fail.
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 _ = s:delete{5}
 ---
@@ -1869,7 +1875,8 @@ s:format(format)
 ...
 s:insert{5, box.NULL} -- Fail.
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s:insert{5} -- Fail.
 ---
@@ -1887,7 +1894,8 @@ s.index.secondary:alter{parts={{2, 'unsigned', is_nullable=false}}}
 ...
 s:insert{5, box.NULL} -- Fail.
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "second" type does not match one required by operation: expected
+    unsigned'
 ...
 s:insert{5} -- Fail.
 ---

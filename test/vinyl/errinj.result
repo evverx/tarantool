@@ -1449,7 +1449,8 @@ format[2].is_nullable = false
 ...
 s:format(format) -- must fail
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected string'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    string'
 ...
 errinj.set("ERRINJ_VY_READ_PAGE_TIMEOUT", 0)
 ---

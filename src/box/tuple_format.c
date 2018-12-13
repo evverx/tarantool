@@ -61,9 +61,28 @@ tuple_field_delete(struct tuple_field *field)
 	free(field);
 }
 
+/** Build the JSON path by field specified. */
+static const char *
+tuple_field_json_path(const struct tuple_format *format,
+		      struct tuple_field *field)
+{
+	struct json_token *token = &field->token;
+	const char *path;
+	if (token->parent == &format->fields.root &&
+		token->num < (int)format->dict->name_count) {
+		const char *field_name =
+			format->dict->names[token->num];
+		path = tt_sprintf("\"%s\"", field_name);
+	} else if (token->type == JSON_TOKEN_NUM) {
+		path = tt_sprintf("%u", token->num + TUPLE_INDEX_BASE);
+	} else {
+		unreachable();
+	}
+	return path;
+}
+
 static int
-tuple_format_use_key_part(struct tuple_format *format,
-			  const struct field_def *fields, uint32_t field_count,
+tuple_format_use_key_part(struct tuple_format *format, uint32_t field_count,
 			  const struct key_part *part, bool is_sequential,
 			  int *current_slot)
 {
@@ -93,8 +112,9 @@ tuple_format_use_key_part(struct tuple_format *format,
 		if (field->nullable_action == ON_CONFLICT_ACTION_NONE)
 			field->nullable_action = part->nullable_action;
 	} else if (field->nullable_action != part->nullable_action) {
-		diag_set(ClientError, ER_ACTION_MISMATCH,
-			 tt_sprintf("%u", part->fieldno + TUPLE_INDEX_BASE),
+		const char *path = tuple_field_json_path(format, field);
+		assert(path != NULL);
+		diag_set(ClientError, ER_ACTION_MISMATCH, path,
 			 on_conflict_action_strs[field->nullable_action],
 			 on_conflict_action_strs[part->nullable_action]);
 		return -1;
@@ -111,21 +131,14 @@ tuple_format_use_key_part(struct tuple_format *format,
 		field->type = part->type;
 	} else if (!field_type1_contains_type2(part->type,
 					       field->type)) {
-		const char *name;
-		int fieldno = part->fieldno + TUPLE_INDEX_BASE;
-		if (part->fieldno >= field_count) {
-			name = tt_sprintf("%d", fieldno);
-		} else {
-			const struct field_def *def =
-				&fields[part->fieldno];
-			name = tt_sprintf("'%s'", def->name);
-		}
 		int errcode;
 		if (!field->is_key_part)
 			errcode = ER_FORMAT_MISMATCH_INDEX_PART;
 		else
 			errcode = ER_INDEX_PART_TYPE_MISMATCH;
-		diag_set(ClientError, errcode, name,
+		const char *path = tuple_field_json_path(format, field);
+		assert(path != NULL);
+		diag_set(ClientError, errcode, path,
 			 field_type_strs[field->type],
 			 field_type_strs[part->type]);
 		return -1;
@@ -190,8 +203,7 @@ tuple_format_create(struct tuple_format *format, struct key_def * const *keys,
 		const struct key_part *parts_end = part + key_def->part_count;
 
 		for (; part < parts_end; part++) {
-			if (tuple_format_use_key_part(format, fields,
-						      field_count, part,
+			if (tuple_format_use_key_part(format, field_count, part,
 						      is_sequential,
 						      &current_slot) != 0)
 				return -1;
@@ -547,8 +559,10 @@ tuple_init_field_map(const struct tuple_format *format, uint32_t *field_map,
 			if (validate &&
 			    !mp_type_is_compatible(type, field->type,
 						   is_nullable) != 0) {
-				diag_set(ClientError, ER_FIELD_TYPE,
-					 tt_sprintf("%u", token.num + 1),
+				const char *path =
+					tuple_field_json_path(format, field);
+				assert(path != NULL);
+				diag_set(ClientError, ER_FIELD_TYPE, path,
 					 field_type_strs[field->type]);
 				return -1;
 			}

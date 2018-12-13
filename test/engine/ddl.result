@@ -707,7 +707,7 @@ pk = s:create_index('pk')
 ...
 sk1 = s:create_index('sk1', { parts = { 2, 'unsigned' } })
 ---
-- error: Field 'field2' has type 'string' in space format, but type 'unsigned' in
+- error: Field "field2" has type 'string' in space format, but type 'unsigned' in
     index definition
 ...
 -- Check space format conflicting with index parts.
@@ -719,7 +719,7 @@ format[2].type = 'unsigned'
 ...
 s:format(format)
 ---
-- error: Field 'field2' has type 'unsigned' in space format, but type 'string' in
+- error: Field "field2" has type 'unsigned' in space format, but type 'string' in
     index definition
 ...
 s:format()
@@ -822,27 +822,33 @@ s:replace{1, '2', {3, 3}, 4.4, -5, true, {value=7}, 8, 9}
 ...
 s:replace{1, 2, {3, 3}, 4.4, -5, true, {value=7}, 8, 9}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected string'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    string'
 ...
 s:replace{1, '2', 3, 4.4, -5, true, {value=7}, 8, 9}
 ---
-- error: 'Tuple field 3 type does not match one required by operation: expected array'
+- error: 'Tuple field "field3" type does not match one required by operation: expected
+    array'
 ...
 s:replace{1, '2', {3, 3}, '4', -5, true, {value=7}, 8, 9}
 ---
-- error: 'Tuple field 4 type does not match one required by operation: expected number'
+- error: 'Tuple field "field4" type does not match one required by operation: expected
+    number'
 ...
 s:replace{1, '2', {3, 3}, 4.4, -5.5, true, {value=7}, 8, 9}
 ---
-- error: 'Tuple field 5 type does not match one required by operation: expected integer'
+- error: 'Tuple field "field5" type does not match one required by operation: expected
+    integer'
 ...
 s:replace{1, '2', {3, 3}, 4.4, -5, {6, 6}, {value=7}, 8, 9}
 ---
-- error: 'Tuple field 6 type does not match one required by operation: expected scalar'
+- error: 'Tuple field "field6" type does not match one required by operation: expected
+    scalar'
 ...
 s:replace{1, '2', {3, 3}, 4.4, -5, true, {7}, 8, 9}
 ---
-- error: 'Tuple field 7 type does not match one required by operation: expected map'
+- error: 'Tuple field "field7" type does not match one required by operation: expected
+    map'
 ...
 s:replace{1, '2', {3, 3}, 4.4, -5, true, {value=7}}
 ---
@@ -1137,7 +1143,7 @@ inspector:cmd("setopt delimiter ''");
 -- any --X--> unsigned
 fail_format_change(2, 'unsigned')
 ---
-- 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- 'Tuple field "field2" type does not match one required by operation: expected unsigned'
 ...
 -- unsigned -----> any
 ok_format_change(3, 'any')
@@ -1146,7 +1152,7 @@ ok_format_change(3, 'any')
 -- unsigned --X--> string
 fail_format_change(3, 'string')
 ---
-- 'Tuple field 3 type does not match one required by operation: expected string'
+- 'Tuple field "field3" type does not match one required by operation: expected string'
 ...
 -- unsigned -----> number
 ok_format_change(3, 'number')
@@ -1163,7 +1169,7 @@ ok_format_change(3, 'scalar')
 -- unsigned --X--> map
 fail_format_change(3, 'map')
 ---
-- 'Tuple field 3 type does not match one required by operation: expected map'
+- 'Tuple field "field3" type does not match one required by operation: expected map'
 ...
 -- string -----> any
 ok_format_change(4, 'any')
@@ -1176,7 +1182,7 @@ ok_format_change(4, 'scalar')
 -- string --X--> boolean
 fail_format_change(4, 'boolean')
 ---
-- 'Tuple field 4 type does not match one required by operation: expected boolean'
+- 'Tuple field "field4" type does not match one required by operation: expected boolean'
 ...
 -- number -----> any
 ok_format_change(5, 'any')
@@ -1189,7 +1195,7 @@ ok_format_change(5, 'scalar')
 -- number --X--> integer
 fail_format_change(5, 'integer')
 ---
-- 'Tuple field 5 type does not match one required by operation: expected integer'
+- 'Tuple field "field5" type does not match one required by operation: expected integer'
 ...
 -- integer -----> any
 ok_format_change(6, 'any')
@@ -1206,7 +1212,7 @@ ok_format_change(6, 'scalar')
 -- integer --X--> unsigned
 fail_format_change(6, 'unsigned')
 ---
-- 'Tuple field 6 type does not match one required by operation: expected unsigned'
+- 'Tuple field "field6" type does not match one required by operation: expected unsigned'
 ...
 -- boolean -----> any
 ok_format_change(7, 'any')
@@ -1219,7 +1225,7 @@ ok_format_change(7, 'scalar')
 -- boolean --X--> string
 fail_format_change(7, 'string')
 ---
-- 'Tuple field 7 type does not match one required by operation: expected string'
+- 'Tuple field "field7" type does not match one required by operation: expected string'
 ...
 -- scalar -----> any
 ok_format_change(8, 'any')
@@ -1228,7 +1234,7 @@ ok_format_change(8, 'any')
 -- scalar --X--> unsigned
 fail_format_change(8, 'unsigned')
 ---
-- 'Tuple field 8 type does not match one required by operation: expected unsigned'
+- 'Tuple field "field8" type does not match one required by operation: expected unsigned'
 ...
 -- array -----> any
 ok_format_change(9, 'any')
@@ -1237,7 +1243,7 @@ ok_format_change(9, 'any')
 -- array --X--> scalar
 fail_format_change(9, 'scalar')
 ---
-- 'Tuple field 9 type does not match one required by operation: expected scalar'
+- 'Tuple field "field9" type does not match one required by operation: expected scalar'
 ...
 -- map -----> any
 ok_format_change(10, 'any')
@@ -1246,7 +1252,7 @@ ok_format_change(10, 'any')
 -- map --X--> scalar
 fail_format_change(10, 'scalar')
 ---
-- 'Tuple field 10 type does not match one required by operation: expected scalar'
+- 'Tuple field "field10" type does not match one required by operation: expected scalar'
 ...
 s:drop()
 ---
@@ -1478,7 +1484,8 @@ format[2].is_nullable = false
 ...
 s:format(format)
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    unsigned'
 ...
 _ = s:delete(1)
 ---
@@ -1761,11 +1768,13 @@ s:format()
 ...
 s:replace{1, '100', -20.2}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    unsigned'
 ...
 s:replace{1, 100, -20.2}
 ---
-- error: 'Tuple field 3 type does not match one required by operation: expected integer'
+- error: 'Tuple field "field3" type does not match one required by operation: expected
+    integer'
 ...
 s:replace{1, 100, -20}
 ---
@@ -1829,11 +1838,13 @@ sk4:alter{parts = {{3, 'integer'}}}
 ...
 s:replace{1, 50.5, 1.5}
 ---
-- error: 'Tuple field 2 type does not match one required by operation: expected unsigned'
+- error: 'Tuple field "field2" type does not match one required by operation: expected
+    unsigned'
 ...
 s:replace{1, 50, 1.5}
 ---
-- error: 'Tuple field 3 type does not match one required by operation: expected integer'
+- error: 'Tuple field "field3" type does not match one required by operation: expected
+    integer'
 ...
 s:replace{5, 5, 5}
 ---
