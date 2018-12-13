@@ -94,9 +94,9 @@ tuple_format_use_key_part(struct tuple_format *format,
 			field->nullable_action = part->nullable_action;
 	} else if (field->nullable_action != part->nullable_action) {
 		diag_set(ClientError, ER_ACTION_MISMATCH,
-				part->fieldno + TUPLE_INDEX_BASE,
-				on_conflict_action_strs[field->nullable_action],
-				on_conflict_action_strs[part->nullable_action]);
+			 tt_sprintf("%u", part->fieldno + TUPLE_INDEX_BASE),
+			 on_conflict_action_strs[field->nullable_action],
+			 on_conflict_action_strs[part->nullable_action]);
 		return -1;
 	}
 
@@ -481,6 +481,17 @@ tuple_field_map_validate(const struct tuple_format *format, uint32_t *field_map)
 	return 0;
 }
 
+/** Checks if mp_type (MsgPack) is compatible with field type. */
+static inline bool
+mp_type_is_compatible(enum mp_type mp_type, enum field_type type,
+		      bool is_nullable)
+{
+	assert(type < field_type_MAX);
+	assert((size_t) mp_type < CHAR_BIT * sizeof(*key_mp_type));
+	uint32_t mask = key_mp_type[type] | (is_nullable * (1U << MP_NIL));
+	return (mask & (1U << mp_type)) != 0;
+}
+
 /** @sa declaration for details. */
 int
 tuple_init_field_map(const struct tuple_format *format, uint32_t *field_map,
@@ -534,10 +545,13 @@ tuple_init_field_map(const struct tuple_format *format, uint32_t *field_map,
 		if (field != NULL) {
 			bool is_nullable = tuple_field_is_nullable(field);
 			if (validate &&
-			    key_mp_type_validate(field->type, type,
-						 ER_FIELD_TYPE, token.num + 1,
-						 is_nullable) != 0)
+			    !mp_type_is_compatible(type, field->type,
+						   is_nullable) != 0) {
+				diag_set(ClientError, ER_FIELD_TYPE,
+					 tt_sprintf("%u", token.num + 1),
+					 field_type_strs[field->type]);
 				return -1;
+			}
 			if (field->offset_slot != TUPLE_OFFSET_SLOT_NIL) {
 				field_map[field->offset_slot] =
 					(uint32_t)(pos - tuple);
