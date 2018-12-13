@@ -518,7 +518,8 @@ sql_generate_row_delete(struct Parse *parse, struct Table *table,
 		 * constraints attached to other tables) are not
 		 * violated by deleting this row.
 		 */
-		fkey_emit_check(parse, table, first_old_reg, 0, NULL);
+		fkey_emit_check(parse, table, first_old_reg, 0, NULL,
+				TK_DELETE);
 	}
 
 	/* Delete the index and table entries. Skip this step if

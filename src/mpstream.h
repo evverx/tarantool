@@ -133,6 +133,13 @@ mpstream_encode_nil(struct mpstream *stream);
 void
 mpstream_encode_bool(struct mpstream *stream, bool val);
 
+void
+mpstream_encode_binl(struct mpstream *stream, uint32_t len);
+
+/** Copies data blob raw of length len directly to stream. */
+void
+mpstream_encode_raw(struct mpstream *stream, const char *raw, uint32_t len);
+
 #if defined(__cplusplus)
 } /* extern "C" */
 #endif /* defined(__cplusplus) */

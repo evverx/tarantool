@@ -145,11 +145,13 @@ test:do_execsql_test(
     })
 
 -- Try to change the ROWID for the new entry.
+-- Direct update of PK is forbidden
 --
 test:do_execsql_test(
     "intpkey-1.11",
     [[
-        UPDATE t1 SET a=4 WHERE b='one';
+        DELETE FROM t1 WHERE a = 7;
+        INSERT INTO t1 VALUES(4,'one','two');
         SELECT * FROM t1;
     ]], {
         -- <intpkey-1.11>
@@ -281,7 +283,8 @@ test:do_execsql_test(
 test:do_execsql_test(
     "intpkey-2.2",
     [[
-        UPDATE t1 SET a=8 WHERE b=='y';
+        DELETE FROM t1 WHERE b=='y';
+        INSERT INTO t1 VALUES(8,'y','z');
         SELECT * FROM t1 WHERE b=='y';
     ]], {
         -- <intpkey-2.2>
@@ -335,7 +338,8 @@ test:do_execsql_test(
     "intpkey-2.7",
     [[
         --UPDATE t1 SET a=-4 WHERE rowid=8;
-        UPDATE t1 SET a=-4 WHERE a=8;
+        DELETE FROM t1 WHERE a==8;
+        INSERT INTO t1 VALUES(-4,'y','z');
         SELECT * FROM t1 WHERE b>'a';
     ]], {
         -- <intpkey-2.7>

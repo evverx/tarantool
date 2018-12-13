@@ -44,11 +44,13 @@
 #include "box/fkey.h"
 #include "box/txn.h"
 #include "box/session.h"
+#include "box/tuple_format.h"
 #include "sqliteInt.h"
 #include "vdbeInt.h"
 #include "tarantoolInt.h"
 
 #include "msgpuck/msgpuck.h"
+#include "mpstream.h"
 
 #include "box/schema.h"
 #include "box/space.h"
@@ -618,6 +620,13 @@ vdbe_add_new_autoinc_id(struct Vdbe *vdbe, int64_t id)
 	id_entry->id = id;
 	stailq_add_tail_entry(vdbe_autoinc_id_list(vdbe), id_entry, link);
 	return 0;
+}
+
+/** Callback to forward and error from mpstream methods. */
+static inline void
+mpstream_encode_error(void *error_ctx)
+{
+	*(bool *)error_ctx = true;
 }
 
 /*
@@ -4445,6 +4454,103 @@ case OP_IdxInsert: {
 		/* Ignore any kind of failes and do not raise error message */
 		rc = SQLITE_OK;
 		/* If we are in trigger, increment ignore raised counter */
+		if (p->pFrame)
+			p->ignoreRaised++;
+	} else if (pOp->p5 & OPFLAG_OE_FAIL) {
+		p->errorAction = ON_CONFLICT_ACTION_FAIL;
+	} else if (pOp->p5 & OPFLAG_OE_ROLLBACK) {
+		p->errorAction = ON_CONFLICT_ACTION_ROLLBACK;
+	}
+	if (rc != 0)
+		goto abort_due_to_error;
+	break;
+}
+/* Opcode: OP_IdxUpdate P1 P2 P3 P4 P5
+ * Synopsis: key=r[P1]
+ *
+ * Make space Update operation. Primary key fields could not be
+ * modified - use OP_Replace opcode instead.
+ * This opcode extends IdxInsert/IdxReplace interface to
+ * transform to OP_Replace in particular case of sql operator
+ * "UPDATE or REPLACE".
+ *
+ * @param P1 The first field of updated tuple.
+ * @param P2 Index of a register with index key MakeRecord.
+ * @param P3 Index of a register with upd_fields blob.
+ *           This blob has size sizeof(uint32_t)*upd_fields_cnt.
+ *           It's items are numbers of fields to be replaced with
+ *           new values from P1 blob. They must be sorted in
+ *           ascending order.
+ * @param P4 Pointer to the struct space to be updated.
+ * @param P5 Flags. If P5 contains OPFLAG_NCHANGE, then VDBE
+ *           accounts the change in a case of successful
+ *           insertion in nChange counter. If P5 contains
+ *           OPFLAG_OE_IGNORE, then we are processing INSERT OR
+ *           INGORE statement. Thus, in case of conflict we don't
+ *           raise an error.
+ */
+case OP_IdxUpdate: {
+	struct Mem *new_tuple = &aMem[pOp->p1];
+	if (pOp->p5 & OPFLAG_NCHANGE)
+		p->nChange++;
+
+	struct space *space = pOp->p4.space;
+	assert(pOp->p4type == P4_SPACEPTR);
+
+	struct Mem *key_mem = &aMem[pOp->p2];
+	assert((key_mem->flags & MEM_Blob) != 0);
+
+	struct Mem *upd_fields_mem = &aMem[pOp->p3];
+	assert((upd_fields_mem->flags & MEM_Blob) != 0);
+	uint32_t *upd_fields = (uint32_t *)upd_fields_mem->z;
+	uint32_t upd_fields_cnt = upd_fields_mem->n / sizeof(uint32_t);
+
+	/* Prepare Tarantool update ops msgpack. */
+	struct region *region = &fiber()->gc;
+	size_t used = region_used(region);
+	bool is_error = false;
+	struct mpstream stream;
+	mpstream_init(&stream, region, region_reserve_cb, region_alloc_cb,
+		      mpstream_encode_error, &is_error);
+	mpstream_encode_array(&stream, upd_fields_cnt);
+	for (uint32_t i = 0; i < upd_fields_cnt; i++) {
+		uint32_t field_idx = upd_fields[i];
+		assert(field_idx < space->def->field_count);
+		mpstream_encode_array(&stream, 3);
+		mpstream_encode_strn(&stream, "=", 1);
+		mpstream_encode_uint(&stream, field_idx + 1);
+		mpstream_encode_vdbe_mem(&stream, new_tuple + field_idx);
+	}
+	mpstream_flush(&stream);
+	if (is_error) {
+		diag_set(OutOfMemory, stream.pos - stream.buf,
+			"mpstream_flush", "stream");
+		rc = SQL_TARANTOOL_ERROR;
+		goto abort_due_to_error;
+	}
+	uint32_t ops_size = region_used(region) - used;
+	const char *ops = region_join(region, ops_size);
+	if (ops == NULL) {
+		diag_set(OutOfMemory, ops_size, "region_join", "raw");
+		rc = SQL_TARANTOOL_ERROR;
+		goto abort_due_to_error;
+	}
+
+	rc = SQLITE_OK;
+	if (box_update(space->def->id, 0, key_mem->z, key_mem->z + key_mem->n,
+		       ops, ops + ops_size, TUPLE_INDEX_BASE, NULL) != 0)
+		rc = SQL_TARANTOOL_ERROR;
+
+	if (pOp->p5 & OPFLAG_OE_IGNORE) {
+		/*
+		 * Ignore any kind of failes and do not raise
+		 * error message
+		 */
+		rc = SQLITE_OK;
+		/*
+		 * If we are in trigger, increment ignore raised
+		 * counter.
+		 */
 		if (p->pFrame)
 			p->ignoreRaised++;
 	} else if (pOp->p5 & OPFLAG_OE_FAIL) {

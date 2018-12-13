@@ -552,4 +552,10 @@ int sqlite3VdbeRecordCompareMsgpack(const void *key1,
 				    struct UnpackedRecord *key2);
 u32 sqlite3VdbeMsgpackGet(const unsigned char *buf, Mem * pMem);
 
+struct mpstream;
+
+/** Perform encoding memory variable to stream. */
+void
+mpstream_encode_vdbe_mem(struct mpstream *stream, struct Mem *var);
+
 #endif				/* !defined(SQLITE_VDBEINT_H) */

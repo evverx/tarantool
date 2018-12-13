@@ -3865,13 +3865,21 @@ vdbe_emit_constraint_checks(struct Parse *parse_context,
  *
  * @param v Virtual database engine.
  * @param space Pointer to space object.
+ * @param op VDBE opcode OP_IdxInsert for INSERT or OP_IdxUpdate
+ *           for UPDATE operation.
  * @param raw_data_reg Register with raw data to insert.
- * @param tuple_len Number of registers to hold the tuple.
+ * @param raw_key_reg (when op == OP_IdxUpdate) Register with key
+ *                    for lookup by primary index.
+ * @param upd_cols_reg (when op == OP_IdxUpdate) Register with
+ *                      blob of updated fields numbers.
+ *                      Read OP_IdxUpdate opcode comments for
+ *                      more details.
  * @param on_conflict On conflict action.
  */
 void
-vdbe_emit_insertion_completion(struct Vdbe *v, struct space *space,
-			       int raw_data_reg, uint32_t tuple_len,
+vdbe_emit_insertion_completion(struct Vdbe *v, struct space *space, int op,
+			       int raw_data_reg, int raw_key_reg,
+			       int upd_cols_reg,
 			       enum on_conflict_action on_conflict);
 
 void
@@ -4730,10 +4738,11 @@ void sqlite3WithPush(Parse *, With *, u8);
  * @param reg_old Register with deleted row.
  * @param reg_new Register with inserted row.
  * @param changed_cols Array of updated columns. Can be NULL.
+ * @param op operation, one of TK_UPDATE, TK_INSERT, TK_DELETE.
  */
 void
 fkey_emit_check(struct Parse *parser, struct Table *tab, int reg_old,
-		int reg_new, const int *changed_cols);
+		int reg_new, const int *changed_cols, int op);
 
 /**
  * Emit VDBE code to do CASCADE, SET NULL or SET DEFAULT actions
