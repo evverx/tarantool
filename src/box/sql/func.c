@@ -1223,9 +1223,19 @@ trimFunc(sqlite3_context * context, int argc, sqlite3_value ** argv)
 	} else if ((zCharSet = sqlite3_value_text(argv[1])) == 0) {
 		return;
 	} else {
-		const unsigned char *z;
-		for (z = zCharSet, nChar = 0; *z; nChar++) {
+		const unsigned char *z = zCharSet;
+		int sizeOfCharSet = \
+		sqlite3_value_bytes(argv[1]); /* Size of char set in bytes. */
+		int nProcessedBytes = 0;
+		nChar = 0;
+		const unsigned char *zStepBack;
+		/* Count the number of UTF-8 characters passing through the
+		* entire char set, but not up to the '\0' or X'00' character. */
+		while(sizeOfCharSet - nProcessedBytes > 0) {
+			zStepBack = z;
 			SQLITE_SKIP_UTF8(z);
+			nProcessedBytes += z - zStepBack;
+			nChar++;
 		}
 		if (nChar > 0) {
 			azChar =
@@ -1235,10 +1245,18 @@ trimFunc(sqlite3_context * context, int argc, sqlite3_value ** argv)
 				return;
 			}
 			aLen = (unsigned char *)&azChar[nChar];
-			for (z = zCharSet, nChar = 0; *z; nChar++) {
+			z = zCharSet;
+			nChar = 0;
+			nProcessedBytes = 0;
+			/* Similar to the previous cycle. But 
+			* now write into "azCharSet". */
+			while(sizeOfCharSet - nProcessedBytes > 0) {
 				azChar[nChar] = (unsigned char *)z;
+				zStepBack = z;
 				SQLITE_SKIP_UTF8(z);
+				nProcessedBytes += z - zStepBack;
 				aLen[nChar] = (u8) (z - azChar[nChar]);
+				nChar++;
 			}
 		}
 	}
