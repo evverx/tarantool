@@ -1,6 +1,6 @@
 #!/usr/bin/env tarantool
 test = require("sqltester")
-test:plan(38)
+test:plan(42)
 
 --!./tcltestrunner.lua
 -- 2005 July 22
@@ -560,5 +560,58 @@ test:do_execsql_test(
 --     ANALYZE
 --   }
 -- } {1 {malformed database schema (sqlite_stat1)}}
+
+--
+-- gh-3866 Wrong space name in _sql_stat* leads to segfault
+--
+test:do_execsql_test(
+    "analyze-7.1",
+    [[
+        DELETE FROM "_sql_stat1";
+        DELETE FROM "_sql_stat4";
+        DROP TABLE IF EXISTS t0;
+        CREATE TABLE t0(id INTEGER PRIMARY KEY);
+        INSERT INTO t0 VALUES (1);
+        INSERT INTO "_sql_stat1" VALUES('abc', 'bca', 'cab');
+        ANALYZE t0;
+    ]], {
+        -- <analyze-7.1>
+        -- </analyze-7.1>
+    })
+
+test:do_execsql_test(
+    "analyze-7.2",
+    [[
+        INSERT INTO "_sql_stat4" VALUES('abc', 'bca', 'cab', 'acb', 'bac', 'cba');
+        ANALYZE t0;
+    ]], {
+        -- <analyze-7.2>
+        -- </analyze-7.2>
+    })
+
+test:do_execsql_test(
+    "analyze-7.3",
+    [[
+        DELETE FROM "_sql_stat1";
+        DELETE FROM "_sql_stat4";
+        DROP TABLE IF EXISTS t1;
+        CREATE TABLE t1(id INTEGER PRIMARY KEY);
+        INSERT INTO t1 VALUES (1);
+        INSERT INTO "_sql_stat1" VALUES('T0', 'WRONG_NAME', 'something');
+        ANALYZE t1;
+    ]], {
+        -- <analyze-7.3>
+        -- </analyze-7.3>
+    })
+
+test:do_execsql_test(
+    "analyze-7.4",
+    [[
+        INSERT INTO "_sql_stat4" VALUES('T0', 'WRONG_NAME', 'value', 'value', 'value', 'value');
+        ANALYZE t1;
+    ]], {
+        -- <analyze-7.4>
+        -- </analyze-7.4>
+    })
 
 test:finish_test()

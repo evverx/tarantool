@@ -1224,10 +1224,10 @@ analysis_loader(void *data, int argc, char **argv, char **unused)
 		return 0;
 	struct analysis_index_info *info = (struct analysis_index_info *) data;
 	assert(info->stats != NULL);
-	struct index_stat *stat = &info->stats[info->index_count++];
+	struct index_stat *stat = &info->stats[info->index_count];
 	struct space *space = space_by_name(argv[0]);
 	if (space == NULL)
-		return -1;
+		return 0;
 	struct index *index;
 	uint32_t iid = box_index_id_by_name(space->def->id, argv[1],
 					    strlen(argv[1]));
@@ -1239,10 +1239,11 @@ analysis_loader(void *data, int argc, char **argv, char **unused)
 		index = space_index(space, iid);
 	} else {
 		if (sqlite3_stricmp(argv[0], argv[1]) != 0)
-			return -1;
+			return 0;
 		index = space_index(space, 0);
 	}
 	assert(index != NULL);
+	info->index_count++;
 	/*
 	 * Additional field is used to describe total
 	 * count of tuples in index. Although now all
@@ -1395,15 +1396,18 @@ load_stat_from_space(struct sqlite3 *db, const char *sql_select_prepare,
 			continue;
 		uint32_t sample_count = sqlite3_column_int(stmt, 2);
 		struct space *space = space_by_name(space_name);
-		assert(space != NULL);
+		if (space == NULL)
+			continue;
 		struct index *index;
 		uint32_t iid = box_index_id_by_name(space->def->id, index_name,
 						    strlen(index_name));
-		if (sqlite3_stricmp(space_name, index_name) == 0 &&
-		    iid == BOX_ID_NIL)
+		if (iid == BOX_ID_NIL) {
+			if (sqlite3_stricmp(space_name, index_name) != 0)
+				continue;
 			index = space_index(space, 0);
-		else
+		} else {
 			index = space_index(space, iid);
+		}
 		assert(index != NULL);
 		uint32_t column_count = index->def->key_def->part_count;
 		struct index_stat *stat = &stats[current_idx_count];
@@ -1463,7 +1467,8 @@ load_stat_from_space(struct sqlite3 *db, const char *sql_select_prepare,
 		if (index_name == NULL)
 			continue;
 		struct space *space = space_by_name(space_name);
-		assert(space != NULL);
+		if (space == NULL)
+			continue;
 		struct index *index;
 		uint32_t iid = box_index_id_by_name(space->def->id, index_name,
 						    strlen(index_name));
@@ -1471,7 +1476,7 @@ load_stat_from_space(struct sqlite3 *db, const char *sql_select_prepare,
 			index = space_index(space, iid);
 		} else {
 			if (sqlite3_stricmp(space_name, index_name) != 0)
-				return -1;
+				continue;
 			index = space_index(space, 0);
 		}
 		assert(index != NULL);
@@ -1544,7 +1549,8 @@ load_stat_to_index(struct sqlite3 *db, const char *sql_select_load,
 		if (index_name == NULL)
 			continue;
 		struct space *space = space_by_name(space_name);
-		assert(space != NULL);
+		if (space == NULL)
+			continue;
 		struct index *index;
 		uint32_t iid = box_index_id_by_name(space->def->id, index_name,
 						    strlen(index_name));
@@ -1552,7 +1558,7 @@ load_stat_to_index(struct sqlite3 *db, const char *sql_select_load,
 			index = space_index(space, iid);
 		} else {
 			if (sqlite3_stricmp(space_name, index_name) != 0)
-				return -1;
+				continue;
 			index = space_index(space, 0);
 		}
 		assert(index != NULL);
