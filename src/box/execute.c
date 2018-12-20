@@ -530,7 +530,7 @@ sql_execute(sqlite3 *db, struct sqlite3_stmt *stmt, struct port *port,
 
 int
 sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
-			uint32_t bind_count, struct sql_response *response,
+			uint32_t bind_count, struct port *port,
 			struct region *region)
 {
 	struct sqlite3_stmt *stmt;
@@ -544,22 +544,23 @@ sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
 		return -1;
 	}
 	assert(stmt != NULL);
-	port_tuple_create(&response->port);
-	response->prep_stmt = stmt;
+	port_tuple_create(port);
 	if (sql_bind(stmt, bind, bind_count) == 0 &&
-	    sql_execute(db, stmt, &response->port, region) == 0)
+	    sql_execute(db, stmt, port, region) == 0) {
+		((struct port_sql *)port)->stmt = stmt;
 		return 0;
-	port_destroy(&response->port);
+	}
+	port_destroy(port);
 	sqlite3_finalize(stmt);
 	return -1;
 }
 
 int
-sql_response_dump(struct sql_response *response, int *keys, struct obuf *out)
+sql_response_dump(struct port *port, int *keys, struct obuf *out)
 {
 	sqlite3 *db = sql_get();
-	struct sqlite3_stmt *stmt = (struct sqlite3_stmt *) response->prep_stmt;
-	struct port_tuple *port_tuple = (struct port_tuple *) &response->port;
+	struct sqlite3_stmt *stmt = ((struct port_sql *)port)->stmt;
+	struct port_tuple *port_tuple = (struct port_tuple *) port;
 	int rc = 0, column_count = sqlite3_column_count(stmt);
 	if (column_count > 0) {
 		if (sql_get_description(stmt, out, column_count) != 0) {
@@ -581,7 +582,7 @@ err:
 		 * Just like SELECT, SQL uses output format compatible
 		 * with Tarantool 1.6
 		 */
-		if (port_dump_msgpack_16(&response->port, out) < 0) {
+		if (port_dump_msgpack_16(port, out) < 0) {
 			/* Failed port dump destroyes the port. */
 			goto err;
 		}
@@ -634,7 +635,7 @@ err:
 		}
 	}
 finish:
-	port_destroy(&response->port);
+	port_destroy(port);
 	sqlite3_finalize(stmt);
 	return rc;
 }

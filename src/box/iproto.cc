@@ -1613,7 +1613,7 @@ tx_process_sql(struct cmsg *m)
 {
 	struct iproto_msg *msg = tx_accept_msg(m);
 	struct obuf *out;
-	struct sql_response response;
+	struct port port;
 	struct sql_bind *bind;
 	int bind_count;
 	const char *sql;
@@ -1630,7 +1630,7 @@ tx_process_sql(struct cmsg *m)
 		goto error;
 	sql = msg->sql.sql_text;
 	sql = mp_decode_str(&sql, &len);
-	if (sql_prepare_and_execute(sql, len, bind, bind_count, &response,
+	if (sql_prepare_and_execute(sql, len, bind, bind_count, &port,
 				    &fiber()->gc) != 0)
 		goto error;
 	/*
@@ -1643,7 +1643,7 @@ tx_process_sql(struct cmsg *m)
 	/* Prepare memory for the iproto header. */
 	if (iproto_prepare_header(out, &header_svp, IPROTO_SQL_HEADER_LEN) != 0)
 		goto error;
-	if (sql_response_dump(&response, &keys, out) != 0) {
+	if (sql_response_dump(&port, &keys, out) != 0) {
 		obuf_rollback_to_svp(out, &header_svp);
 		goto error;
 	}

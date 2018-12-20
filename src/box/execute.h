@@ -51,14 +51,21 @@ extern const char *sql_info_key_strs[];
 struct obuf;
 struct region;
 struct sql_bind;
+struct sqlite3_stmt;
 
 /** Response on EXECUTE request. */
-struct sql_response {
-	/** Port with response data if any. */
-	struct port port;
-	/** Prepared SQL statement with metadata. */
-	void *prep_stmt;
+struct port_sql {
+	/* Inherited from port_tuple. */
+	const struct port_vtab *vtab;
+	int size;
+	struct port_tuple_entry *first;
+	struct port_tuple_entry *last;
+	struct port_tuple_entry first_entry;
+	/* New field. */
+	struct sqlite3_stmt *stmt;
 };
+static_assert(sizeof(struct port_sql) <= sizeof(struct port),
+	      "sizeof(struct port_sql) must be <= sizeof(struct port)");
 
 /**
  * Parse MessagePack array of SQL parameters.
@@ -112,7 +119,7 @@ sql_bind_list_decode(const char *data, struct sql_bind **out_bind);
  * @retval -1 Memory error.
  */
 int
-sql_response_dump(struct sql_response *response, int *keys, struct obuf *out);
+sql_response_dump(struct port *port, int *keys, struct obuf *out);
 
 /**
  * Prepare and execute an SQL statement.
@@ -129,7 +136,7 @@ sql_response_dump(struct sql_response *response, int *keys, struct obuf *out);
  */
 int
 sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
-			uint32_t bind_count, struct sql_response *response,
+			uint32_t bind_count, struct port *port,
 			struct region *region);
 
 #if defined(__cplusplus)
