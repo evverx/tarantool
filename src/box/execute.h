@@ -33,7 +33,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "port.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -48,24 +47,10 @@ enum sql_info_key {
 
 extern const char *sql_info_key_strs[];
 
+struct port;
 struct obuf;
 struct region;
 struct sql_bind;
-struct sqlite3_stmt;
-
-/** Response on EXECUTE request. */
-struct port_sql {
-	/* Inherited from port_tuple. */
-	const struct port_vtab *vtab;
-	int size;
-	struct port_tuple_entry *first;
-	struct port_tuple_entry *last;
-	struct port_tuple_entry first_entry;
-	/* New field. */
-	struct sqlite3_stmt *stmt;
-};
-static_assert(sizeof(struct port_sql) <= sizeof(struct port),
-	      "sizeof(struct port_sql) must be <= sizeof(struct port)");
 
 /**
  * Parse MessagePack array of SQL parameters.

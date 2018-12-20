@@ -81,6 +81,20 @@ port_tuple_create(struct port *port);
 int
 port_tuple_add(struct port *port, struct tuple *tuple);
 
+/** Response on EXECUTE request. */
+struct port_sql {
+	/* Inherited from port_tuple. */
+	const struct port_vtab *vtab;
+	int size;
+	struct port_tuple_entry *first;
+	struct port_tuple_entry *last;
+	struct port_tuple_entry first_entry;
+	/* New field. */
+	struct sqlite3_stmt *stmt;
+};
+static_assert(sizeof(struct port_sql) <= sizeof(struct port),
+	      "sizeof(struct port_sql) must be <= sizeof(struct port)");
+
 /** Port for storing the result of a Lua CALL/EVAL. */
 struct port_lua {
 	const struct port_vtab *vtab;
