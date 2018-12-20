@@ -95,6 +95,43 @@ struct port_sql {
 static_assert(sizeof(struct port_sql) <= sizeof(struct port),
 	      "sizeof(struct port_sql) must be <= sizeof(struct port)");
 
+/**
+ * Dump a built response into @an out buffer. The response is
+ * destroyed.
+ * Response structure:
+ * +----------------------------------------------+
+ * | IPROTO_OK, sync, schema_version   ...        | iproto_header
+ * +----------------------------------------------+---------------
+ * | Body - a map with one or two keys.           |
+ * |                                              |
+ * | IPROTO_BODY: {                               |
+ * |     IPROTO_METADATA: [                       |
+ * |         {IPROTO_FIELD_NAME: column name1},   |
+ * |         {IPROTO_FIELD_NAME: column name2},   | iproto_body
+ * |         ...                                  |
+ * |     ],                                       |
+ * |                                              |
+ * |     IPROTO_DATA: [                           |
+ * |         tuple, tuple, tuple, ...             |
+ * |     ]                                        |
+ * | }                                            |
+ * +-------------------- OR ----------------------+
+ * | IPROTO_BODY: {                               |
+ * |     IPROTO_SQL_INFO: {                       |
+ * |         SQL_INFO_ROW_COUNT: number           |
+ * |     }                                        |
+ * | }                                            |
+ * +----------------------------------------------+
+ * @param response EXECUTE response.
+ * @param[out] keys number of keys in dumped map.
+ * @param out Output buffer.
+ *
+ * @retval  0 Success.
+ * @retval -1 Memory error.
+ */
+int
+sql_response_dump(struct port *port, struct obuf *out);
+
 /** Port for storing the result of a Lua CALL/EVAL. */
 struct port_lua {
 	const struct port_vtab *vtab;

@@ -37,6 +37,10 @@
 #include <fiber.h>
 #include "errinj.h"
 
+#include "iproto_constants.h"
+#include "sql/sqliteInt.h"
+#include "execute.h"
+
 static struct mempool port_tuple_entry_pool;
 
 int
@@ -144,3 +148,148 @@ const struct port_vtab port_tuple_vtab = {
 	.dump_plain = NULL,
 	.destroy = port_tuple_destroy,
 };
+
+/**
+ * Serialize a description of the prepared statement.
+ * @param stmt Prepared statement.
+ * @param out Out buffer.
+ * @param column_count Statement's column count.
+ *
+ * @retval  0 Success.
+ * @retval -1 Client or memory error.
+ */
+static inline int
+sql_get_description(struct sqlite3_stmt *stmt, struct obuf *out,
+		    int column_count)
+{
+	assert(column_count > 0);
+	int size = mp_sizeof_uint(IPROTO_METADATA) +
+		   mp_sizeof_array(column_count);
+	char *pos = (char *) obuf_alloc(out, size);
+	if (pos == NULL) {
+		diag_set(OutOfMemory, size, "obuf_alloc", "pos");
+		return -1;
+	}
+	pos = mp_encode_uint(pos, IPROTO_METADATA);
+	pos = mp_encode_array(pos, column_count);
+	for (int i = 0; i < column_count; ++i) {
+		size_t size = mp_sizeof_map(2) +
+			      mp_sizeof_uint(IPROTO_FIELD_NAME) +
+			      mp_sizeof_uint(IPROTO_FIELD_TYPE);
+		const char *name = sqlite3_column_name(stmt, i);
+		const char *type = sqlite3_column_datatype(stmt, i);
+		/*
+		 * Can not fail, since all column names are
+		 * preallocated during prepare phase and the
+		 * column_name simply returns them.
+		 */
+		assert(name != NULL);
+		size += mp_sizeof_str(strlen(name));
+		size += mp_sizeof_str(strlen(type));
+		char *pos = (char *) obuf_alloc(out, size);
+		if (pos == NULL) {
+			diag_set(OutOfMemory, size, "obuf_alloc", "pos");
+			return -1;
+		}
+		pos = mp_encode_map(pos, 2);
+		pos = mp_encode_uint(pos, IPROTO_FIELD_NAME);
+		pos = mp_encode_str(pos, name, strlen(name));
+		pos = mp_encode_uint(pos, IPROTO_FIELD_TYPE);
+		pos = mp_encode_str(pos, type, strlen(type));
+	}
+	return 0;
+}
+
+int
+sql_response_dump(struct port *port, struct obuf *out)
+{
+	sqlite3 *db = sql_get();
+	struct sqlite3_stmt *stmt = ((struct port_sql *)port)->stmt;
+	struct port_tuple *port_tuple = (struct port_tuple *) port;
+	int rc = 0, column_count = sqlite3_column_count(stmt);
+	if (column_count > 0) {
+		int keys = 2;
+		int size = mp_sizeof_map(keys);
+		char *pos = (char *) obuf_alloc(out, size);
+		if (pos == NULL) {
+			diag_set(OutOfMemory, size, "obuf_alloc", "pos");
+			goto err;
+		}
+		pos = mp_encode_map(pos, keys);
+		if (sql_get_description(stmt, out, column_count) != 0) {
+err:
+			rc = -1;
+			goto finish;
+		}
+		size = mp_sizeof_uint(IPROTO_DATA) +
+		       mp_sizeof_array(port_tuple->size);
+		pos = (char *) obuf_alloc(out, size);
+		if (pos == NULL) {
+			diag_set(OutOfMemory, size, "obuf_alloc", "pos");
+			goto err;
+		}
+		pos = mp_encode_uint(pos, IPROTO_DATA);
+		pos = mp_encode_array(pos, port_tuple->size);
+		/*
+		 * Just like SELECT, SQL uses output format compatible
+		 * with Tarantool 1.6
+		 */
+		if (port_dump_msgpack_16(port, out) < 0) {
+			/* Failed port dump destroyes the port. */
+			goto err;
+		}
+	} else {
+		int keys = 1;
+		assert(port_tuple->size == 0);
+		struct stailq *autoinc_id_list =
+			vdbe_autoinc_id_list((struct Vdbe *)stmt);
+		uint32_t map_size = stailq_empty(autoinc_id_list) ? 1 : 2;
+		int size = mp_sizeof_map(keys) +
+			   mp_sizeof_uint(IPROTO_SQL_INFO) +
+			   mp_sizeof_map(map_size);
+		char *pos = (char *) obuf_alloc(out, size);
+		if (pos == NULL) {
+			diag_set(OutOfMemory, size, "obuf_alloc", "pos");
+			goto err;
+		}
+		pos = mp_encode_map(pos, keys);
+		pos = mp_encode_uint(pos, IPROTO_SQL_INFO);
+		pos = mp_encode_map(pos, map_size);
+		uint64_t id_count = 0;
+		int changes = db->nChange;
+		size = mp_sizeof_uint(SQL_INFO_ROW_COUNT) +
+		       mp_sizeof_uint(changes);
+		if (!stailq_empty(autoinc_id_list)) {
+			struct autoinc_id_entry *id_entry;
+			stailq_foreach_entry(id_entry, autoinc_id_list, link) {
+				size += id_entry->id >= 0 ?
+					mp_sizeof_uint(id_entry->id) :
+					mp_sizeof_int(id_entry->id);
+				id_count++;
+			}
+			size += mp_sizeof_uint(SQL_INFO_AUTOINCREMENT_IDS) +
+				mp_sizeof_array(id_count);
+		}
+		char *buf = obuf_alloc(out, size);
+		if (buf == NULL) {
+			diag_set(OutOfMemory, size, "obuf_alloc", "buf");
+			goto err;
+		}
+		buf = mp_encode_uint(buf, SQL_INFO_ROW_COUNT);
+		buf = mp_encode_uint(buf, changes);
+		if (!stailq_empty(autoinc_id_list)) {
+			buf = mp_encode_uint(buf, SQL_INFO_AUTOINCREMENT_IDS);
+			buf = mp_encode_array(buf, id_count);
+			struct autoinc_id_entry *id_entry;
+			stailq_foreach_entry(id_entry, autoinc_id_list, link) {
+				buf = id_entry->id >= 0 ?
+				      mp_encode_uint(buf, id_entry->id) :
+				      mp_encode_int(buf, id_entry->id);
+			}
+		}
+	}
+finish:
+	port_destroy(port);
+	sqlite3_finalize(stmt);
+	return rc;
+}
