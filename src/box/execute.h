@@ -119,7 +119,7 @@ sql_bind_list_decode(const char *data, struct sql_bind **out_bind);
  * @retval -1 Memory error.
  */
 int
-sql_response_dump(struct port *port, int *keys, struct obuf *out);
+sql_response_dump(struct port *port, struct obuf *out);
 
 /**
  * Prepare and execute an SQL statement.
