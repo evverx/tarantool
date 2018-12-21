@@ -51,14 +51,26 @@ extern const char *sql_info_key_strs[];
 struct obuf;
 struct region;
 struct sql_bind;
+struct sqlite3_stmt;
 
-/** Response on EXECUTE request. */
-struct sql_response {
-	/** Port with response data if any. */
-	struct port port;
-	/** Prepared SQL statement with metadata. */
-	void *prep_stmt;
+struct port_sql {
+	/* port_tuple to inherit from. */
+	struct port_tuple port_tuple;
+	/* Prepared SQL statement. */
+	struct sqlite3_stmt *stmt;
 };
+static_assert(sizeof(struct port_sql) <= sizeof(struct port),
+	      "sizeof(struct port_sql) must be <= sizeof(struct port)");
+
+extern const struct port_vtab port_sql_vtab;
+
+/**
+ * Create a port for storing tuples.
+ *
+ * @param port port_tuple to transform into port_sql.
+ */
+void
+port_sql_create(struct port *port, struct sqlite3_stmt *stmt);
 
 /**
  * Parse MessagePack array of SQL parameters.
@@ -78,42 +90,6 @@ int
 sql_bind_list_decode(const char *data, struct sql_bind **out_bind);
 
 /**
- * Dump a built response into @an out buffer. The response is
- * destroyed.
- * Response structure:
- * +----------------------------------------------+
- * | IPROTO_OK, sync, schema_version   ...        | iproto_header
- * +----------------------------------------------+---------------
- * | Body - a map with one or two keys.           |
- * |                                              |
- * | IPROTO_BODY: {                               |
- * |     IPROTO_METADATA: [                       |
- * |         {IPROTO_FIELD_NAME: column name1},   |
- * |         {IPROTO_FIELD_NAME: column name2},   | iproto_body
- * |         ...                                  |
- * |     ],                                       |
- * |                                              |
- * |     IPROTO_DATA: [                           |
- * |         tuple, tuple, tuple, ...             |
- * |     ]                                        |
- * | }                                            |
- * +-------------------- OR ----------------------+
- * | IPROTO_BODY: {                               |
- * |     IPROTO_SQL_INFO: {                       |
- * |         SQL_INFO_ROW_COUNT: number           |
- * |     }                                        |
- * | }                                            |
- * +----------------------------------------------+
- * @param response EXECUTE response.
- * @param out Output buffer.
- *
- * @retval  0 Success.
- * @retval -1 Memory error.
- */
-int
-sql_response_dump(struct sql_response *response, struct obuf *out);
-
-/**
  * Prepare and execute an SQL statement.
  * @param sql SQL statement.
  * @param len Length of @a sql.
@@ -128,7 +104,7 @@ sql_response_dump(struct sql_response *response, struct obuf *out);
  */
 int
 sql_prepare_and_execute(const char *sql, int len, const struct sql_bind *bind,
-			uint32_t bind_count, struct sql_response *response,
+			uint32_t bind_count, struct port *port,
 			struct region *region);
 
 #if defined(__cplusplus)
